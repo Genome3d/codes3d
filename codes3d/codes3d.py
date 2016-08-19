@@ -1,5 +1,6 @@
 #!/usr/bin/python
 import ast
+import csv
 import argparse
 import os
 import sqlite3
@@ -87,12 +88,9 @@ def find_interactions(snps,fragment_database_fp,hic_data_dir,include,exclude,out
 			interactions[snp][cell_line] = Set([])
 			print "\tSearching cell line " + cell_line
 			for replicate in os.listdir(hic_data_dir + '/' + cell_line):
-				if replicate.endswith(".db"):
-					db = hic_data_dir + '/' + cell_line + '/' + replicate
+				if os.path.isdir("%s/%s/%s" % (hic_data_dir,cell_line,replicate)):
+					rep_dir = hic_data_dir + '/' + cell_line + '/' + replicate
 					print "\t\tSearching replicate " + replicate
-					table_index_db = sqlite3.connect(db)
-					table_index_db.text_factory = str
-					table_index = table_index_db.cursor()
 					for snp in snps.keys():
                                                 interactions[snp][cell_line] = Set([])
 						print "\t\t\tFinding interactions for " + str(snp)
@@ -103,10 +101,11 @@ def find_interactions(snps,fragment_database_fp,hic_data_dir,include,exclude,out
 							continue
 						snp_fragment = snp_fragment_result[0]
 						snp_chr = snps[snp][0]
-						for interaction in table_index.execute("SELECT chr1, fragment1 FROM chr%s_interactions WHERE chr2=? and fragment2=?" % snp_chr,[snp_chr,snp_fragment]):
-							interactions[snp][cell_line].add(interaction)
-						for interaction in table_index.execute("SELECT chr2, fragment2 FROM chr%s_interactions WHERE chr1=? and fragment1=?" % snp_chr,[snp_chr,snp_fragment]):
-							interactions[snp][cell_line].add(interaction)
+						with open("%s/%s/%s.csv" % (rep_dir,snp_chr,snp_fragment)) as frag_in:
+							frags = csv.reader(frag_in).next()
+							for frag in frags:
+								interaction = ast.literal_eval(frag)
+								interactions[snp][cell_line].add(interaction)
 	if not suppress_intermediate_files:
 		with open(output_dir + "/snp-gene_interactions.txt",'w') as intfile:
 			for snp in interactions.keys():
