@@ -4,6 +4,7 @@ import csv
 import argparse
 import os
 import sqlite3
+import shelve
 import pybedtools
 import requests
 import multiprocessing
@@ -88,8 +89,8 @@ def find_interactions(snps,fragment_database_fp,hic_data_dir,include,exclude,out
 			interactions[snp][cell_line] = Set([])
 			print "\tSearching cell line " + cell_line
 			for replicate in os.listdir(hic_data_dir + '/' + cell_line):
-				if os.path.isdir("%s/%s/%s" % (hic_data_dir,cell_line,replicate)):
-					rep_dir = hic_data_dir + '/' + cell_line + '/' + replicate
+				if replicate.endswith(".db"):
+					rep_ints = shelve.open(hic_data_dir + '/' + cell_line + '/' + replicate)
 					print "\t\tSearching replicate " + replicate
 					for snp in snps.keys():
                                                 interactions[snp][cell_line] = Set([])
@@ -101,11 +102,10 @@ def find_interactions(snps,fragment_database_fp,hic_data_dir,include,exclude,out
 							continue
 						snp_fragment = snp_fragment_result[0]
 						snp_chr = snps[snp][0]
-						with open("%s/%s/%s.csv" % (rep_dir,snp_chr,snp_fragment)) as frag_in:
-							frags = csv.reader(frag_in).next()
-							for frag in frags:
-								interaction = ast.literal_eval(frag)
-								interactions[snp][cell_line].add(interaction)
+						key = "%s.%s" % (snp_chr,snp_fragment)
+						frags = rep_ints[key]
+						for interaction in frags:
+							interactions[snp][cell_line].add(interaction)
 	if not suppress_intermediate_files:
 		with open(output_dir + "/snp-gene_interactions.txt",'w') as intfile:
 			for snp in interactions.keys():
