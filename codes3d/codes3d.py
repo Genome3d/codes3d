@@ -4,7 +4,6 @@ import csv
 import argparse
 import os
 import sqlite3
-import shelve
 import pybedtools
 import requests
 import multiprocessing
@@ -90,10 +89,10 @@ def find_interactions(snps,fragment_database_fp,hic_data_dir,include,exclude,out
 			print "\tSearching cell line " + cell_line
 			for replicate in os.listdir(hic_data_dir + '/' + cell_line):
 				if replicate.endswith(".db"):
-                                        print "\tOpening " + hic_data_dir + '/' + cell_line + '/' + replicate
+                    print "\tOpening " + hic_data_dir + '/' + cell_line + '/' + replicate
 					rep_db = sqlite3.connect(hic_data_dir + '/' + cell_line + '/' + replicate)
-                                        rep_db.text_factory = str
-                                        rep_ints = rep_db.cursor()
+                    rep_db.text_factory = str
+                    rep_ints = rep_db.cursor()
 					print "\t\tSearching replicate " + replicate
 					for snp in snps.keys():
                                                 interactions[snp][cell_line] = Set([])
@@ -105,8 +104,8 @@ def find_interactions(snps,fragment_database_fp,hic_data_dir,include,exclude,out
 							continue
 						snp_fragment = snp_fragment_result[0]
 						snp_chr = snps[snp][0]
-                                                for interaction in rep_ints.execute("SELECT chr2, fragment2 FROM interactions WHERE chr1=? AND fragment1=?", [snp_chr,snp_fragment]):
-                                                    interactions[snp][cell_line].add(interaction)
+                        for interaction in rep_ints.execute("SELECT chr2, fragment2 FROM interactions WHERE chr1=? AND fragment1=?", [snp_chr,snp_fragment]):
+                            interactions[snp][cell_line].add(interaction)
 	if not suppress_intermediate_files:
 		with open(output_dir + "/snp-gene_interactions.txt",'w') as intfile:
 			for snp in interactions.keys():
