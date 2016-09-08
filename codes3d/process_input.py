@@ -9,7 +9,8 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 	config = ConfigObj(args.config)
 	snp_database_fp = config["SNP_DATABASE_FP"]
+	fragment_database_fp = config["FRAGMENT_DATABASE_FP"]
 	if not os.path.isdir(args.output_dir):
 		os.makedirs(args.output_dir)
 
-	codes3d.process_inputs(args.inputs,snp_database_fp,args.output_dir)
+	codes3d.process_inputs(args.inputs,snp_database_fp,fragment_database_fp,args.output_dir)

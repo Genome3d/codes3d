@@ -1,5 +1,5 @@
 from sets import Set
-import argparse,codes3d,sqlite3,shutil,os
+import argparse,sqlite3,os
 
 def build_hic_table_index(input_hic_fp,chr1_col,chr2_col,frag1_col,frag2_col,mapq1_col,mapq2_col,mapq_cutoff,output_fp):
         ##Do line count for progress meter
@@ -12,10 +12,10 @@ def build_hic_table_index(input_hic_fp,chr1_col,chr2_col,frag1_col,frag2_col,map
 	lines = lines//100*100 #Get an approximation
 	do_linecount = not lines == 0
 	
-        int_db = sqlite3.connect(output_fp)
-        interactions = int_db.cursor()
-        interactions.execute("CREATE TABLE IF NOT EXISTS interactions (chr1 text, fragment1 text, chr2 text, fragment2 text)")
-        interactions.execute("CREATE INDEX IF NOT EXISTS i_1 ON interactions (chr1, fragment1)")
+	int_db = sqlite3.connect(output_fp)
+	interactions = int_db.cursor()
+	interactions.execute("CREATE TABLE IF NOT EXISTS interactions (chr1 text, fragment1 text, chr2 text, fragment2 text)")
+	interactions.execute("CREATE INDEX IF NOT EXISTS i_1 ON interactions (chr1, fragment1)")
 	chr1_col = chr1_col - 1
 	chr2_col = chr2_col - 1
 	frag1_col = frag1_col - 1
@@ -34,8 +34,8 @@ def build_hic_table_index(input_hic_fp,chr1_col,chr2_col,frag1_col,frag2_col,map
 				frag1 = interaction[frag1_col]
 				chr2 = interaction[chr2_col]
 				frag2 = interaction[frag2_col]
-                                interactions.execute("INSERT INTO interactions VALUES(?,?,?,?)", [chr1,frag1,chr2,frag2])
-                                interactions.execute("INSERT INTO interactions VALUES(?,?,?,?)", [chr2,frag2,chr1,frag1])
+				interactions.execute("INSERT INTO interactions VALUES(?,?,?,?)", [chr1,frag1,chr2,frag2])
+				interactions.execute("INSERT INTO interactions VALUES(?,?,?,?)", [chr2,frag2,chr1,frag1])
         int_db.commit()
         interactions.close()
 	print "Done indexing HiC interaction table."
