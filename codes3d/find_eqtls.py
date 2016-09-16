@@ -16,7 +16,6 @@ if __name__ == "__main__":
 	gene_database_fp = config["GENE_DATABASE_FP"]
 	if not os.path.isdir(args.output_dir):
 		os.makedirs(args.output_dir)
-
-	snps = codes3d.parse_snps_file(args.snps_file)
-	genes = codes3d.parse_genes_file(args.genes_file)
+	snps = codes3d.parse_snps_files([args.snps_file])
+	genes = codes3d.parse_genes_files([args.genes_file])
 	eqtls,num_sig = codes3d.find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,args.fdr_threshold,args.local_databases_only,args.num_processes,args.output_dir)

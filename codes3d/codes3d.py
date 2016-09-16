@@ -16,6 +16,9 @@ def process_inputs(inputs,snp_database_fp,fragment_database_fp,output_dir,suppre
 	snp_db = sqlite3.connect(snp_database_fp)
 	snp_db.text_factory = str
 	snp_index = snp_db.cursor()
+	fragment_index_db = sqlite3.connect(fragment_database_fp)
+	fragment_index_db.text_factory = str
+	fragment_index = fragment_index_db.cursor()
 	snps = {}
 	for input in inputs:
 		if os.path.isfile(input):
@@ -33,7 +36,13 @@ def process_inputs(inputs,snp_database_fp,fragment_database_fp,output_dir,suppre
 					if snp == None:
 						print "Warning: %s does not exist in SNP database." % id
 					else:
-						snps[snp[0]]={ "chr": snp[1], "locus": snp[2] }
+						#Query fragmentIndex to find out to which fragment the SNP belongs
+						fragment_index.execute("SELECT fragment FROM fragments WHERE chr=? AND start<=? AND end>=?",["chr" + snp[1],snp[2],snp[2]])
+						snp_fragment_result = fragment_index.fetchone()
+						if snp_fragment_result == None:
+							print "Warning: error retrieving SNP fragment for SNP " + snp
+						else:
+							snps[snp[0]]={ "chr": snp[1], "locus": snp[2], "frag": snp_fragment_result[0] }
 		else:
 			snp = None
 			if input.startswith("rs"):
@@ -46,18 +55,14 @@ def process_inputs(inputs,snp_database_fp,fragment_database_fp,output_dir,suppre
 			if snp == None:
 				print "Warning: %s does not exist in SNP database." % input
 			else:
-				snps[snp[0]]={ "chr": snp[1], "locus": snp[2] }
-	#Query fragmentIndex to find to which fragment the SNP belongs
-	fragment_index_db = sqlite3.connect(fragment_database_fp)
-	fragment_index_db.text_factory = str
-	fragment_index = fragment_index_db.cursor()
-	for snp in snps.keys():
-		fragment_index.execute("SELECT fragment FROM fragments WHERE chr=? AND start<=? AND end>=?",["chr" + snps[snp]["chr"],snps[snp]["locus"],snps[snp]["locus"]])
-		snp_fragment_result = fragment_index.fetchone()
-		if snp_fragment_result == None:
-			print "Warning: error retrieving SNP fragment for SNP " + snp
-			continue
-		snps[snp]["frag"] = snp_fragment_result[0]
+				#Query fragmentIndex to find out to which fragment the SNP belongs
+				fragment_index.execute("SELECT fragment FROM fragments WHERE chr=? AND start<=? AND end>=?",["chr" + snp[1],snp[2],snp[2]])
+				snp_fragment_result = fragment_index.fetchone()
+				if snp_fragment_result == None:
+					print "Warning: error retrieving SNP fragment for SNP " + snp
+				else:
+					snps[snp[0]]={ "chr": snp[1], "locus": snp[2], "frag": snp_fragment_result[0] }
+		
 	if not suppress_intermediate_files:
 		if not os.path.isdir(output_dir):
 			os.makedirs(output_dir)
@@ -220,7 +225,6 @@ def find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,fdr_threshold,local_dat
 		if not eqtls.has_key(snp):
 			print "\t\tWarning: no eQTLs found for SNP %s, removing from analysis." % snp
 			del genes[snp]
-			del interactions[snp]
 			snps_to_remove.append(snp)
 	for snp in snps_to_remove:
 		del snps[snp]
@@ -263,20 +267,22 @@ def get_GTEx_response(snps,genes,num_tests,num_sig,gene_database_fp,eqtls,p_valu
 	gtexResponses = manager.list()
 	procPool = multiprocessing.Pool(processes=num_processes)
 	for i,reqList in enumerate(reqLists,start=1):
-		print "\t\t\tSending request %s of %s" % (i,len(reqLists))
-		procPool.apply_async(send_GTEx_query, (reqList,gtexResponses))
+		procPool.apply_async(send_GTEx_query, (i,len(reqLists),reqList,gtexResponses))
 		time.sleep(10)
 	procPool.close()
 	procPool.join()
 	print "\t\tNumber of GTEx responses received: " + str(len(gtexResponses))
 	results = []
+	failed_requests = []
 	for response in gtexResponses:
 		try:
 			results += response[1].json()["result"]
 		except Exception as e:
-			print "\t\tWarning: bad response. Exception: %s" % e
-			with open(output_dir + "/failed_GTEx_requests.txt",'a') as failed_requests:
-				failed_requests.write(str(response[0]))
+			print "\t\tWARNING: bad response.\n\t\t\tException: %s\n\t\t\tResponse:\n\t\t\t%s" % (e,response[1])
+			failed_requests.append(response[0])
+	if failed_requests:
+		with open(output_dir + "/failed_GTEx_requests.txt",'w') as failed_requests_file:
+			failed_requests_file.write(str(failed_requests))
 	for result in results:
 		geneSymbol = result["geneSymbol"]
 		snpId = result["snpId"]
@@ -311,7 +317,10 @@ def get_GTEx_response(snps,genes,num_tests,num_sig,gene_database_fp,eqtls,p_valu
 			eqtls[snpId][geneSymbol]["gene_chr"] = gene_chr
 			eqtls[snpId][geneSymbol]["gene_start"] = gene_start
 			eqtls[snpId][geneSymbol]["gene_end"] = gene_end
-			eqtls[snpId][geneSymbol]["cell_lines"] = list(genes[snpId][geneSymbol])
+			try:
+				eqtls[snpId][geneSymbol]["cell_lines"] = list(genes[snpId][geneSymbol])
+			except KeyError:
+				eqtls[snpId][geneSymbol]["cell_lines"] = "NA"
 			eqtls[snpId][geneSymbol]["p_thresh"] = p_thresh
 			eqtls[snpId][geneSymbol]["tissues"] = {}
 			if cis:
@@ -325,16 +334,47 @@ def get_GTEx_response(snps,genes,num_tests,num_sig,gene_database_fp,eqtls,p_valu
 		
 	return num_tests
 
-def send_GTEx_query(reqList,gtexResponses):
+def send_GTEx_query(num,num_reqLists,reqList,gtexResponses):
 	try:
-		gtexResponses.append((reqList,requests.post("http://gtexportal.org/api/v6p/dyneqtl?v=clversion", json=reqList)))
+		while True:
+			print "\t\t\tSending request %s of %s" % (num,num_reqLists)
+			res = requests.post("http://gtexportal.org/api/v6p/dyneqtl?v=clversion", json=reqList)
+			if res.status_code == 200:
+				gtexResponses.append((reqList,res))
+				time.sleep(30)
+				return
+			elif res.status_code == 500:
+				print "\t\t\tThere was an error processing request %s. Writing to failed request log and continuing." % num
+				gtexResponses.append((reqList,"Processing error"))
+				time.sleep(30)
+				return
+			else:
+			    print "\t\t\tRequest %s received response with status %s. Trying again in five minutes." % (num,res.status_code)
+			    time.sleep(300)
 	except requests.exceptions.ConnectionError:
 		try:
-			print "\t\tWarning: a connection error occurred with the GTEx service. Retrying..."
-			gtexResponses.append((reqList,requests.post("http://gtexportal.org/api/v6p/dyneqtl?v=clversion", json=reqList))) #Allow to crash if fails a second time
+			print "\t\tWarning: Request %s experienced a connection error. Retrying in five minutes." % num
+                        time.sleep(300)
+			while True:
+				print "\t\t\tSending request %s of %s" % (num,num_reqLists)
+				res = requests.post("http://gtexportal.org/api/v6p/dyneqtl?v=clversion", json=reqList)
+				print "\t\t\tRequest %s response: %s" % (num,res.status_code)
+				if res.status_code == 200:
+					gtexResponses.append((reqList,res))
+					time.sleep(30)
+					return
+				elif res.status_code == 500:
+					print "\t\t\tThere was an error processing request %s. Writing to failed request log and continuing." % num
+					gtexResponses.append((reqList,"Processing error"))
+					time.sleep(30)
+					return
+				else:
+					print "\t\t\tRequest %s received response with status: %s. Trying again in five minutes." % (num,res.status_code)
+					time.sleep(300)
 		except requests.exceptions.ConnectionError:
 			print "\t\tRetry failed. Continuing, but results will be incomplete."
 			gtexResponses.append((reqList,"Connection failure"))
+			time.sleep(300)
 			return
 
 def get_gene_expression_info(eqtls,expression_table_fp,output_dir):
@@ -367,7 +407,9 @@ def produce_summary(eqtls,expression_table_fp,output_dir):
 		for gene in eqtls[snp].keys():
 			if not gene == "snp_info":
 				distance_from_snp = 0
-				if(not eqtls[snp]["snp_info"]["chr"] == eqtls[snp][gene]["gene_chr"]):
+				if(eqtls[snp][gene]["gene_chr"] == "NA"):
+					distance_from_snp = "NA" #If gene location information is missing
+				elif(not eqtls[snp]["snp_info"]["chr"] == eqtls[snp][gene]["gene_chr"]):
 					distance_from_snp = "NA" #Not applicable to trans interactions
 				elif(eqtls[snp]["snp_info"]["locus"] < eqtls[snp][gene]["gene_start"]):
 					distance_from_snp = eqtls[snp][gene]["gene_start"] - eqtls[snp]["snp_info"]["locus"]
@@ -400,11 +442,14 @@ def produce_summary(eqtls,expression_table_fp,output_dir):
 							gene_exp[gene][tissue] = "NA"
 
 					summary.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t" % (snp,eqtls[snp]["snp_info"]["chr"],eqtls[snp]["snp_info"]["locus"],gene,eqtls[snp][gene]["gene_chr"],eqtls[snp][gene]["gene_start"],eqtls[snp][gene]["gene_end"],tissue,eqtls[snp][gene]["tissues"][tissue]["pvalue"],eqtls[snp][gene]["tissues"][tissue]["qvalue"]))
-					for i,cell_line in enumerate(eqtls[snp][gene]["cell_lines"],start=1):
-						if not i == len(eqtls[snp][gene]["cell_lines"]):
-							summary.write(cell_line + ',')
-						else:
-							summary.write(cell_line)
+					if eqtls[snp][gene]["cell_lines"] == "NA":
+						summary.write("NA")
+					else:
+						for i,cell_line in enumerate(eqtls[snp][gene]["cell_lines"],start=1):
+							if not i == len(eqtls[snp][gene]["cell_lines"]):
+								summary.write(cell_line + ',')
+							else:
+								summary.write(cell_line)
 					summary.write("\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (eqtls[snp][gene]["p_thresh"],eqtls[snp][gene]["cis?"],distance_from_snp,gene_exp[gene][tissue],gene_exp[gene]["max"],gene_exp[gene][gene_exp[gene]["max"]],gene_exp[gene]["min"],gene_exp[gene][gene_exp[gene]["min"]]))
 	summary.close()
 
@@ -542,7 +587,7 @@ def get_wikipathways_response(snp,gene,tissue,pwresults):
 	if res:
 		pwresults.append([snp,gene,tissue,res])
 
-def parse_snps_file(snps_files):
+def parse_snps_files(snps_files):
 	snps = {}
 	for snp_file in snps_files:
 		with open(snp_file,'r') as snpfile:
@@ -551,7 +596,7 @@ def parse_snps_file(snps_files):
 				snps[snp[0]] = { "chr": snp[1], "locus": int(snp[2]), "frag": snp[3] }
 	return snps
 
-def parse_interactions_file(interactions_files):
+def parse_interactions_files(interactions_files):
 	interactions = {}
 	for interaction_file in interactions_files:
 		with open(interactions_file,'r') as intfile:
@@ -566,7 +611,7 @@ def parse_interactions_file(interactions_files):
 				interactions[snp][cell_line].add((interaction[2],int(interaction[3])))
 	return interactions
 
-def parse_genes_file(genes_files):
+def parse_genes_files(genes_files):
 	genes = {}
 	for gene_file in genes_files:
 		with open(gene_file,'r') as genefile:
