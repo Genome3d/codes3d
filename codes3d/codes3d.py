@@ -159,12 +159,30 @@ def find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,fdr_threshold,local_dat
 	print "Identifying eQTLs of interest..."
 	eqtls = {} #A mapping of SNPs to genes with which they have an eQTL relationship, which in turn maps to a list of tissues in which this eQTL occurs
 	p_values = [] #A sorted list of all p-values for use computing FDR
-	num_tests = 0 #Total number of tests done
 	num_sig = {} #Number of eQTLs deemed significant under the given threshold
-	gene_index_db = sqlite3.connect(gene_database_fp)
-	gene_index_db.text_factory = str
-	gene_index = gene_index_db.cursor()
+	num_tests = 0 #Total number of tests done
+	num_tests += query_local_databases(eqtl_data_dir,genes,eqtls,p_values)
+	if not local_databases_only:
+		num_tests += query_GTEx_service(snps,genes,eqtls,p_values,num_processes,output_dir)
+	process_eqtls(snps,genes,eqtls,gene_database_fp)
+	eqtlfile = None
+	if not suppress_intermediate_files:
+		eqtlfile = open(output_dir + '/eqtls.txt','w')
+	for snp in eqtls.keys():
+		num_sig[snp] = 0
+		for gene in eqtls[snp].keys():
+			if not gene == "snp_info":
+				for tissue in eqtls[snp][gene]["tissues"].keys():
+					eqtls[snp][gene]["tissues"][tissue]["qvalue"] = compute_fdr(eqtls[snp][gene]["tissues"][tissue]["pvalue"],p_values,num_tests)
+					if eqtls[snp][gene]["tissues"][tissue]["qvalue"] < fdr_threshold:
+						num_sig[snp] += 1
+					if not suppress_intermediate_files:
+						eqtlfile.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (snp,eqtls[snp]["snp_info"]["chr"],eqtls[snp]["snp_info"]["locus"],gene,eqtls[snp][gene]["gene_chr"],eqtls[snp][gene]["gene_start"],eqtls[snp][gene]["gene_end"],eqtls[snp][gene]["cell_lines"],eqtls[snp][gene]["cis?"],eqtls[snp][gene]["p_thresh"],tissue,eqtls[snp][gene]["tissues"][tissue]["pvalue"]))
+	return (eqtls,num_sig)
+
+def query_local_databases(eqtl_data_dir,genes,eqtls,p_values):
 	print "\tQuerying local databases."
+	num_tests = 0
 	for db in os.listdir(eqtl_data_dir): #Iterate through databases of eQTLs by tissue type
 		tissue = db[:db.rfind('.')]
 		print "\t\tQuerying " + tissue
@@ -176,83 +194,22 @@ def find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,fdr_threshold,local_dat
 				num_tests += 1
 				for eqtl in eqtl_index.execute("SELECT pvalue FROM eqtls WHERE rsID=? AND gene_symbol=?",(snp,gene)): #Pull down all eQTLs related to a given SNP to test for relevance:
 					if not eqtls.has_key(snp):
-						eqtls[snp] = {} #Stores eQTLs relevant to this SNP, and, for each eQTL, a list of the tissues in which it is found and the associated p-value with the eQTL in this tissue
-						eqtls[snp]["snp_info"] = { "chr": snps[snp]["chr"], "locus": snps[snp]["locus"] }
-						num_sig[snp] = 0
+						eqtls[snp] = {}
 					if not eqtls[snp].has_key(gene):
-						gene_chr = "NA"
-						gene_start = "NA"
-						gene_end = "NA"
-						p_thresh = "NA"
-						max_length = 0
-						for gene_stat in gene_index.execute("SELECT chr, start, end, p_thresh FROM genes WHERE symbol=?", [gene]):
-							if gene_stat[2] - gene_stat[1] > max_length: #Consider "canonical" to be the longest record where multiple records are present
-								if gene_stat[0].startswith("chr"):
-									gene_chr = gene_stat[0][gene_stat[0].find("chr")+3:]
-								else:
-									gene_chr = gene_stat[0]
-								gene_start = gene_stat[1]
-								gene_end = gene_stat[2]
-								p_thresh = gene_stat[3]
-								max_length = gene_stat[2] - gene_stat[1]
-						if gene_chr == "NA":
-							print "\t\tWarning: no entry in gene database for " + gene
-						eqtls[snp][gene] = {}
-						eqtls[snp][gene]["gene_chr"] = gene_chr
-						eqtls[snp][gene]["gene_start"] = gene_start
-						eqtls[snp][gene]["gene_end"] = gene_end
-						eqtls[snp][gene]["cell_lines"] = list(genes[snp][gene])
-						eqtls[snp][gene]["p_thresh"] = p_thresh
-						eqtls[snp][gene]["tissues"] = {}
-						cis = gene_chr == eqtls[snp]["snp_info"]["chr"] and (eqtls[snp]["snp_info"]["locus"] > gene_start - 1000000 and eqtls[snp]["snp_info"]["locus"] < gene_end + 1000000) #eQTL is cis if the SNP is within 1Mbp of the gene
-						if cis:
-							eqtls[snp][gene]["cis?"] = True
-						else:
-							eqtls[snp][gene]["cis?"] = False
-					try:
-						p = eqtl[0]
-						eqtls[snp][gene]["tissues"][tissue] = {"pvalue": p}
-						bisect.insort(p_values,p)
-					except sqlite3.OperationalError:
-						pass
+						eqtls[snp][gene] = {"tissues": {}}
+					eqtls[snp][gene]["tissues"][tissue] = {"pvalue": eqtl[0] }
+					bisect.insort(p_values,eqtl[0])
+	return num_tests
 
-	if not local_databases_only:
-		print "\tQuerying GTEx online database."
-		num_tests = get_GTEx_response(snps,genes,num_tests,num_sig,gene_database_fp,eqtls,p_values,num_processes,output_dir)
-
-	snps_to_remove = []
-	for snp in snps:
-		if not eqtls.has_key(snp):
-			print "\t\tWarning: no eQTLs found for SNP %s, removing from analysis." % snp
-			del genes[snp]
-			snps_to_remove.append(snp)
-	for snp in snps_to_remove:
-		del snps[snp]
-	
-	eqtlfile = None
-	if not suppress_intermediate_files:
-		print "\tComputing q-values and writing eqtlfile..."
-		eqtlfile = open(output_dir + '/eqtls.txt','w')
-	else:
-		print "\tComputing q-values..."
-	for snp in eqtls.keys():
-		for gene in eqtls[snp].keys():
-			if not gene == "snp_info":
-				for tissue in eqtls[snp][gene]["tissues"].keys():
-					eqtls[snp][gene]["tissues"][tissue]["qvalue"] = compute_fdr(eqtls[snp][gene]["tissues"][tissue]["pvalue"],p_values,num_tests)
-					if eqtls[snp][gene]["tissues"][tissue]["qvalue"] < fdr_threshold:
-						num_sig[snp] += 1
-					if not suppress_intermediate_files:
-						eqtlfile.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (snp,eqtls[snp]["snp_info"]["chr"],eqtls[snp]["snp_info"]["locus"],gene,eqtls[snp][gene]["gene_chr"],eqtls[snp][gene]["gene_start"],eqtls[snp][gene]["gene_end"],eqtls[snp][gene]["cell_lines"],eqtls[snp][gene]["cis?"],eqtls[snp][gene]["p_thresh"],tissue,eqtls[snp][gene]["tissues"][tissue]["pvalue"]))
-	
-	return (eqtls,num_sig)
-
-def get_GTEx_response(snps,genes,num_tests,num_sig,gene_database_fp,eqtls,p_values,num_processes,output_dir):
+def query_GTEx_service(snps,genes,eqtls,p_values,num_processes,output_dir):
 	tissues = Set(["Adipose_Subcutaneous","Adipose_Visceral_Omentum","Adrenal_Gland","Artery_Aorta","Artery_Coronary","Artery_Tibial","Brain_Amygdala","Brain_Anterior_cingulate_cortex_BA24","Brain_Caudate_basal_ganglia","Brain_Cerebellar_Hemisphere","Brain_Cerebellum","Brain_Cortex","Brain_Frontal_Cortex_BA9","Brain_Hippocampus","Brain_Hypothalamus","Brain_Nucleus_accumbens_basal_ganglia","Brain_Putamen_basal_ganglia","Brain_Spinal_cord_cervical_c-1","Brain_Substantia_nigra","Breast_Mammary_Tissue","Cells_EBV-transformed_lymphocytes","Cells_Transformed_fibroblasts","Colon_Sigmoid","Esophagus_Gastroesophageal_Junction","Esophagus_Mucosa","Esophagus_Muscularis","Heart_Atrial_Appendage","Heart_Left_Ventricle","Liver","Lung","Minor_Salivary_Gland","Muscle_Skeletal","Nerve_Tibial","Ovary","Pancreas","Pituitary","Prostate","Skin_Not_Sun_Exposed_Suprapubic","Skin_Sun_Exposed_Lower_leg","Small_Intestine_Terminal_Ileum","Spleen","Stomach","Testis","Thyroid","Uterus","Vagina","Whole_Blood"])
-	gene_index_db = sqlite3.connect(gene_database_fp)
-	gene_index_db.text_factory = str
-	gene_index = gene_index_db.cursor()
+	if num_processes > 10:
+		num_processes = 10
 	manager = multiprocessing.Manager()
+	#res_queue = multiprocessing.Queue()
+	#response_writer = multiprocessing.Process(target=write_responses,args=(res_queue,output_dir))
+	#response_writer.daemon = True
+	num_tests = 0
 	reqLists = [[]]
 	for snp in genes.keys():
 		for gene in genes[snp].keys():
@@ -263,14 +220,16 @@ def get_GTEx_response(snps,genes,num_tests,num_sig,gene_database_fp,eqtls,p_valu
 						reqLists[-1].append({"snpId":snp,"gencodeId":gene,"tissueName":tissue})
 					else:
 						reqLists.append([{"snpId":snp,"gencodeId":gene,"tissueName":tissue}])
-	print "\t\tRequests to send: " + str(len(reqLists))
+	print "\tQuerying GTEx online service..."
 	gtexResponses = manager.list()
+	#response_writer.start()
 	procPool = multiprocessing.Pool(processes=num_processes)
 	for i,reqList in enumerate(reqLists,start=1):
 		procPool.apply_async(send_GTEx_query, (i,len(reqLists),reqList,gtexResponses))
 		time.sleep(10)
 	procPool.close()
 	procPool.join()
+	#response_writer.join()
 	print "\t\tNumber of GTEx responses received: " + str(len(gtexResponses))
 	results = []
 	failed_requests = []
@@ -278,104 +237,124 @@ def get_GTEx_response(snps,genes,num_tests,num_sig,gene_database_fp,eqtls,p_valu
 		try:
 			results += response[1].json()["result"]
 		except Exception as e:
-			print "\t\tWARNING: bad response.\n\t\t\tException: %s\n\t\t\tResponse:\n\t\t\t%s" % (e,response[1])
+			print "\t\tWARNING: bad response (%s)" % response[1]
 			failed_requests.append(response[0])
 	if failed_requests:
 		with open(output_dir + "/failed_GTEx_requests.txt",'w') as failed_requests_file:
 			failed_requests_file.write(str(failed_requests))
 	for result in results:
-		geneSymbol = result["geneSymbol"]
-		snpId = result["snpId"]
-		if str(geneSymbol) == "gene not found" or not snps.has_key(snpId):
+		if (str(result["geneSymbol"]) == "gene not found" or not snps.has_key(result["snpId"])) or result["pvalue"] == "NA":
 			continue
 		num_tests += 1
-		if not eqtls.has_key(snpId):
-			eqtls[snpId] = {}
-			eqtls[snpId]["snp_info"] = { "chr": snps[snpId]["chr"], "locus": snps[snpId]["locus"] }
-			num_sig[snpId] = 0
-		if not eqtls[snpId].has_key(geneSymbol):
-			gene_chr = "NA"
-			gene_start = "NA"
-			gene_end = "NA"
-			p_thresh = "NA"
-			
-			max_length = 0
-			for gene_stat in gene_index.execute("SELECT chr, start, end, p_thresh FROM genes WHERE symbol=?", [geneSymbol]):
-				if gene_stat[2] - gene_stat[1] > max_length: #Consider "canonical" to be the longest record where multiple records are present
-					if gene_stat[0].startswith("chr"):
-						gene_chr = gene_stat[0][gene_stat[0].find("chr")+3:]
-					else:
-						gene_chr = gene_stat[0]
-					gene_start = gene_stat[1]
-					gene_end = gene_stat[2]
-					p_thresh = gene_stat[3]
-					max_length = gene_stat[2] - gene_stat[1]
-			cis = gene_chr == eqtls[snpId]["snp_info"]["chr"] and (eqtls[snpId]["snp_info"]["locus"] > gene_start - 1000000 and eqtls[snpId]["snp_info"]["locus"] < gene_end + 1000000) #eQTL is cis if the SNP is within 1Mbp of the gene
-			
-			eqtls[snpId][geneSymbol] = {}
-			eqtls[snpId][geneSymbol]["ens_id"] = result["gencodeId"]
-			eqtls[snpId][geneSymbol]["gene_chr"] = gene_chr
-			eqtls[snpId][geneSymbol]["gene_start"] = gene_start
-			eqtls[snpId][geneSymbol]["gene_end"] = gene_end
-			try:
-				eqtls[snpId][geneSymbol]["cell_lines"] = list(genes[snpId][geneSymbol])
-			except KeyError:
-				eqtls[snpId][geneSymbol]["cell_lines"] = "NA"
-			eqtls[snpId][geneSymbol]["p_thresh"] = p_thresh
-			eqtls[snpId][geneSymbol]["tissues"] = {}
-			if cis:
-				eqtls[snpId][geneSymbol]["cis?"] = True
-			else:
-				eqtls[snpId][geneSymbol]["cis?"] = False
-		if not result["pvalue"] == "NA":
-			p = float(result["pvalue"])
-			eqtls[snpId][geneSymbol]["tissues"][result["tissueId"]] = {"pvalue": p}
-			bisect.insort(p_values,p)
-		
+		snp = result["snpId"]
+		gene = result["geneSymbol"]
+		if not eqtls.has_key(snp):
+			eqtls[snp] = {}
+		if not eqtls[snp].has_key(gene):
+			eqtls[snp][gene] = {"tissues": {}}
+		p = float(result["pvalue"])
+		eqtls[snp][gene]["tissues"][result["tissueId"]] = { "pvalue": p }
+		bisect.insort(p_values,p)
 	return num_tests
+
+def process_eqtls(snps,genes,eqtls,gene_database_fp):
+	gene_index_db = sqlite3.connect(gene_database_fp)
+	gene_index_db.text_factory = str
+	gene_index = gene_index_db.cursor()
+	for snp in eqtls.keys():
+		eqtls[snp]["snp_info"] = { "chr": snps[snp]["chr"], "locus": snps[snp]["locus"] }
+		for gene in eqtls[snp].keys():
+				if not gene == "snp_info":
+					max_length = 0
+					for gene_stat in gene_index.execute("SELECT chr, start, end, p_thresh FROM genes WHERE symbol=?", [gene]):
+						if gene_stat[2] - gene_stat[1] > max_length: #Consider "canonical" to be the longest record where multiple records are present
+							if gene_stat[0].startswith("chr"):
+								gene_chr = gene_stat[0][gene_stat[0].find("chr")+3:]
+							else:
+								gene_chr = gene_stat[0]
+							gene_start = gene_stat[1]
+							gene_end = gene_stat[2]
+							p_thresh = gene_stat[3]
+							max_length = gene_stat[2] - gene_stat[1]
+					cis = gene_chr == eqtls[snp]["snp_info"]["chr"] and (eqtls[snp]["snp_info"]["locus"] > gene_start - 1000000 and eqtls[snp]["snp_info"]["locus"] < gene_end + 1000000) #eQTL is cis if the SNP is within 1Mbp of the gene
+					
+					eqtls[snp][gene]["gene_chr"] = gene_chr
+					eqtls[snp][gene]["gene_start"] = gene_start
+					eqtls[snp][gene]["gene_end"] = gene_end
+					try:
+						eqtls[snp][gene]["cell_lines"] = list(genes[snp][gene])
+					except KeyError:
+						eqtls[snp][gene]["cell_lines"] = "NA"
+					eqtls[snp][gene]["p_thresh"] = p_thresh
+					if cis:
+						eqtls[snp][gene]["cis?"] = True
+					else:
+						eqtls[snp][gene]["cis?"] = False
 
 def send_GTEx_query(num,num_reqLists,reqList,gtexResponses):
 	try:
 		while True:
-			print "\t\t\tSending request %s of %s" % (num,num_reqLists)
+			print "\t\tSending request %s of %s" % (num,num_reqLists)
 			res = requests.post("http://gtexportal.org/api/v6p/dyneqtl?v=clversion", json=reqList)
 			if res.status_code == 200:
+				#res_queue.put(res)
+				#if num == num_reqLists:
+				#	res_queue.put("END")
 				gtexResponses.append((reqList,res))
 				time.sleep(30)
 				return
 			elif res.status_code == 500:
-				print "\t\t\tThere was an error processing request %s. Writing to failed request log and continuing." % num
+				print "\t\tThere was an error processing request %s. Writing to failed request log and continuing." % num
 				gtexResponses.append((reqList,"Processing error"))
+				#if num == num_reqLists:
+				#	res_queue.put("END")
 				time.sleep(30)
 				return
 			else:
-			    print "\t\t\tRequest %s received response with status %s. Trying again in five minutes." % (num,res.status_code)
+			    print "\t\tRequest %s received response with status %s. Trying again in five minutes." % (num,res.status_code)
 			    time.sleep(300)
 	except requests.exceptions.ConnectionError:
 		try:
 			print "\t\tWarning: Request %s experienced a connection error. Retrying in five minutes." % num
-                        time.sleep(300)
+			time.sleep(300)
 			while True:
-				print "\t\t\tSending request %s of %s" % (num,num_reqLists)
+				print "\t\tSending request %s of %s" % (num,num_reqLists)
 				res = requests.post("http://gtexportal.org/api/v6p/dyneqtl?v=clversion", json=reqList)
-				print "\t\t\tRequest %s response: %s" % (num,res.status_code)
+				print "\t\tRequest %s response: %s" % (num,res.status_code)
 				if res.status_code == 200:
+					#res_queue.put(res)
+					#if num == num_reqLists:
+					#	res_queue.put("END")
 					gtexResponses.append((reqList,res))
 					time.sleep(30)
 					return
 				elif res.status_code == 500:
-					print "\t\t\tThere was an error processing request %s. Writing to failed request log and continuing." % num
+					print "\t\tThere was an error processing request %s. Writing to failed request log and continuing." % num
 					gtexResponses.append((reqList,"Processing error"))
+					#if num == num_reqLists:
+					#	res_queue.put("END")
 					time.sleep(30)
 					return
 				else:
-					print "\t\t\tRequest %s received response with status: %s. Trying again in five minutes." % (num,res.status_code)
+					print "\t\tRequest %s received response with status: %s. Trying again in five minutes." % (num,res.status_code)
 					time.sleep(300)
 		except requests.exceptions.ConnectionError:
 			print "\t\tRetry failed. Continuing, but results will be incomplete."
 			gtexResponses.append((reqList,"Connection failure"))
+			#if num == num_reqLists:
+			#	res_queue.put("END")
 			time.sleep(300)
 			return
+
+def write_responses(res_queue,output_dir):
+	res_out = open(output_dir + "/responses.txt",'w')
+	while True:
+		res = res_queue.get()
+		if res:
+			if not res == "END":
+				res_out.write(res + '\n')
+			else:
+				break
 
 def get_gene_expression_info(eqtls,expression_table_fp,output_dir):
 	print "Getting gene expression information..."
@@ -643,7 +622,10 @@ def parse_eqtls_files(eqtls_files,fdr_threshold):
 				except ValueError:
 					gene_start = eqtl[5]
 					gene_end = eqtl[6]
-				cell_lines = ast.literal_eval(eqtl[7])
+                                try:
+                                    cell_lines = ast.literal_eval(eqtl[7])
+                                except ValueError:
+                                    cell_lines = eqtl[7]
 				cis = ast.literal_eval(eqtl[8])
 				try:
 					p_thresh = float(eqtl[9])
@@ -703,7 +685,7 @@ if __name__ == "__main__":
 	snps = process_inputs(args.inputs,snp_database_fp,fragment_database_fp,args.output_dir,args.suppress_intermediate_files)
 	interactions = find_interactions(snps,hic_data_dir,args.include_cell_lines,args.exclude_cell_lines,args.output_dir,args.suppress_intermediate_files)
 	genes = find_genes(interactions,fragment_database_fp,gene_bed_fp,args.output_dir,args.suppress_intermediate_files)
-	eqtls,num_sig = find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,args.fdr_threshold,args.local_databases_only,args.num_processes,args.output_dir,args.suppress_intermediate_files)
+	eqtls,num_sig = find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,args.fdr_threshold,args.local_databases_only,args.num_processes,args.output_dir,suppress_intermediate_files=args.suppress_intermediate_files)
 	produce_summary(eqtls,expression_table_fp,args.output_dir)
 	produce_overview(genes,eqtls,num_sig,args.output_dir)
 	pathways = retrieve_pathways(eqtls,args.fdr_threshold,args.num_processes,args.output_dir)
