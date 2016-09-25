@@ -206,9 +206,6 @@ def query_GTEx_service(snps,genes,eqtls,p_values,num_processes,output_dir):
 	if num_processes > 10:
 		num_processes = 10
 	manager = multiprocessing.Manager()
-	#res_queue = multiprocessing.Queue()
-	#response_writer = multiprocessing.Process(target=write_responses,args=(res_queue,output_dir))
-	#response_writer.daemon = True
 	num_tests = 0
 	reqLists = [[]]
 	for snp in genes.keys():
@@ -222,14 +219,12 @@ def query_GTEx_service(snps,genes,eqtls,p_values,num_processes,output_dir):
 						reqLists.append([{"snpId":snp,"gencodeId":gene,"tissueName":tissue}])
 	print "\tQuerying GTEx online service..."
 	gtexResponses = manager.list()
-	#response_writer.start()
 	procPool = multiprocessing.Pool(processes=num_processes)
 	for i,reqList in enumerate(reqLists,start=1):
 		procPool.apply_async(send_GTEx_query, (i,len(reqLists),reqList,gtexResponses))
 		time.sleep(10)
 	procPool.close()
 	procPool.join()
-	#response_writer.join()
 	print "\t\tNumber of GTEx responses received: " + str(len(gtexResponses))
 	results = []
 	failed_requests = []
@@ -241,7 +236,7 @@ def query_GTEx_service(snps,genes,eqtls,p_values,num_processes,output_dir):
 			failed_requests.append(response[0])
 	if failed_requests:
 		with open(output_dir + "/failed_GTEx_requests.txt",'w') as failed_requests_file:
-			failed_requests_file.write(str(failed_requests))
+			failed_requests_file.write(str(failed_requests) + '\n')
 	for result in results:
 		if (str(result["geneSymbol"]) == "gene not found" or not snps.has_key(result["snpId"])) or result["pvalue"] == "NA":
 			continue
@@ -297,17 +292,12 @@ def send_GTEx_query(num,num_reqLists,reqList,gtexResponses):
 			print "\t\tSending request %s of %s" % (num,num_reqLists)
 			res = requests.post("http://gtexportal.org/api/v6p/dyneqtl?v=clversion", json=reqList)
 			if res.status_code == 200:
-				#res_queue.put(res)
-				#if num == num_reqLists:
-				#	res_queue.put("END")
 				gtexResponses.append((reqList,res))
 				time.sleep(30)
 				return
 			elif res.status_code == 500:
 				print "\t\tThere was an error processing request %s. Writing to failed request log and continuing." % num
 				gtexResponses.append((reqList,"Processing error"))
-				#if num == num_reqLists:
-				#	res_queue.put("END")
 				time.sleep(30)
 				return
 			else:
@@ -322,17 +312,12 @@ def send_GTEx_query(num,num_reqLists,reqList,gtexResponses):
 				res = requests.post("http://gtexportal.org/api/v6p/dyneqtl?v=clversion", json=reqList)
 				print "\t\tRequest %s response: %s" % (num,res.status_code)
 				if res.status_code == 200:
-					#res_queue.put(res)
-					#if num == num_reqLists:
-					#	res_queue.put("END")
 					gtexResponses.append((reqList,res))
 					time.sleep(30)
 					return
 				elif res.status_code == 500:
 					print "\t\tThere was an error processing request %s. Writing to failed request log and continuing." % num
 					gtexResponses.append((reqList,"Processing error"))
-					#if num == num_reqLists:
-					#	res_queue.put("END")
 					time.sleep(30)
 					return
 				else:
@@ -341,22 +326,10 @@ def send_GTEx_query(num,num_reqLists,reqList,gtexResponses):
 		except requests.exceptions.ConnectionError:
 			print "\t\tRetry failed. Continuing, but results will be incomplete."
 			gtexResponses.append((reqList,"Connection failure"))
-			#if num == num_reqLists:
-			#	res_queue.put("END")
 			time.sleep(300)
 			return
 
-def write_responses(res_queue,output_dir):
-	res_out = open(output_dir + "/responses.txt",'w')
-	while True:
-		res = res_queue.get()
-		if res:
-			if not res == "END":
-				res_out.write(res + '\n')
-			else:
-				break
-
-def get_gene_expression_info(eqtls,expression_table_fp,output_dir):
+def get_gene_expression_information(eqtls,expression_table_fp,output_dir):
 	print "Getting gene expression information..."
 	gene_df = pandas.read_table(expression_table_fp,index_col='Symbol')
 	gene_exp = pandas.DataFrame(data=None,columns=gene_df.columns)
