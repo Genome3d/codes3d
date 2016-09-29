@@ -256,20 +256,32 @@ def process_eqtls(snps,genes,eqtls,gene_database_fp):
 	gene_index_db = sqlite3.connect(gene_database_fp)
 	gene_index_db.text_factory = str
 	gene_index = gene_index_db.cursor()
+	col_names = [res[1] for res in gene_index.execute("PRAGMA table_info(genes)")]
+	include_p_thresh = "p_thresh" in col_names
+	if include_p_thresh:
+		query_str = "SELECT chr, start, end, p_thresh FROM genes WHERE symbol=?"
+	else:
+		query_str = "SELECT chr, start, end FROM genes WHERE symbol=?"
 	for snp in eqtls.keys():
 		eqtls[snp]["snp_info"] = { "chr": snps[snp]["chr"], "locus": snps[snp]["locus"] }
 		for gene in eqtls[snp].keys():
 				if not gene == "snp_info":
+					gene_chr = "NA"
+					gene_start = "NA"
+					gene_end = "NA"
 					max_length = 0
-					for gene_stat in gene_index.execute("SELECT chr, start, end, p_thresh FROM genes WHERE symbol=?", [gene]):
-						if gene_stat[2] - gene_stat[1] > max_length: #Consider "canonical" to be the longest record where multiple records are present
+					for gene_stat in gene_index.execute(query_str, [gene]):
+						if abs(gene_stat[2] - gene_stat[1]) > max_length: #Consider "canonical" to be the longest record where multiple records are present
 							if gene_stat[0].startswith("chr"):
 								gene_chr = gene_stat[0][gene_stat[0].find("chr")+3:]
 							else:
 								gene_chr = gene_stat[0]
 							gene_start = gene_stat[1]
 							gene_end = gene_stat[2]
-							p_thresh = gene_stat[3]
+							if include_p_thresh:
+								p_thresh = gene_stat[3]
+							else:
+								p_thresh = "NA"
 							max_length = gene_stat[2] - gene_stat[1]
 					cis = gene_chr == eqtls[snp]["snp_info"]["chr"] and (eqtls[snp]["snp_info"]["locus"] > gene_start - 1000000 and eqtls[snp]["snp_info"]["locus"] < gene_end + 1000000) #eQTL is cis if the SNP is within 1Mbp of the gene
 					
@@ -577,14 +589,26 @@ def parse_genes_files(genes_files):
 				genes[snp][gene[1]].add(gene[2])
 	return genes
 
-def parse_eqtls_files(eqtls_files,fdr_threshold):
+def parse_eqtls_files(eqtls_files,fdr_threshold=None):
+	print "Parsing eQTLs..."
 	eqtls = {}
 	p_values = [] #A sorted list of all p-values for use computing FDR
 	num_tests = 0 #Total number of tests done
 	num_sig = {} #Number of eQTLs deemed significant under the given threshold
 	for eqtls_file in eqtls_files:
+		lines = 0
+		with open(eqtls_file,'r') as eqtlfile:	
+			#Do line count for progress meter
+			print "\tDetermining table size..."
+			for i in eqtlfile:
+				lines += 1
+		lines = lines//100*100 #Get an approximation
+		do_linecount = not lines == 0
 		with open(eqtls_file,'r') as eqtlfile:
-			for line in eqtlfile:
+			for i,line in enumerate(eqtlfile):
+				if do_linecount:
+					if i % (lines/100) == 0:
+						print "\t\tProcessed %d%%..." % ((float(i)/float(lines))*100)
 				eqtl = line.strip().split('\t')
 				snp = eqtl[0]
 				gene = eqtl[3]
@@ -620,15 +644,17 @@ def parse_eqtls_files(eqtls_files,fdr_threshold):
 					eqtls[snp][gene]["tissues"] = {}
 					eqtls[snp][gene]["cis?"] = cis
 				eqtls[snp][gene]["tissues"][tissue] = {"pvalue": p}
-				bisect.insort(p_values,p)
-				num_tests += 1
+				if fdr_threshold:
+					bisect.insort(p_values,p)
+					num_tests += 1
 	for snp in eqtls.keys():
 		for gene in eqtls[snp].keys():
 			if not gene == "snp_info":
 				for tissue in eqtls[snp][gene]["tissues"].keys():
-					eqtls[snp][gene]["tissues"][tissue]["qvalue"] = compute_fdr(eqtls[snp][gene]["tissues"][tissue]["pvalue"],p_values,num_tests)
-					if eqtls[snp][gene]["tissues"][tissue]["qvalue"] < fdr_threshold:
-						num_sig[snp] += 1
+					if fdr_threshold:
+						eqtls[snp][gene]["tissues"][tissue]["qvalue"] = compute_fdr(eqtls[snp][gene]["tissues"][tissue]["pvalue"],p_values,num_tests)
+						if eqtls[snp][gene]["tissues"][tissue]["qvalue"] < fdr_threshold:
+							num_sig[snp] += 1
 	return (eqtls,num_sig)
 
 if __name__ == "__main__":
