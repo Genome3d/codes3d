@@ -14,5 +14,5 @@ if __name__ == "__main__":
 	if not os.path.isdir(args.output_dir):
 		os.makedirs(args.output_dir)
 
-	snps = codes3d.parse_snps_file(args.snps_files)
+	snps = codes3d.parse_snps_files(args.snps_files)
 	interactions = codes3d.find_interactions(snps,hic_data_dir,args.include_cell_lines,args.exclude_cell_lines,args.output_dir)

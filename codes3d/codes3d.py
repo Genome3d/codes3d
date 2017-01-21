@@ -562,7 +562,7 @@ def parse_snps_files(snps_files):
 
 def parse_interactions_files(interactions_files):
 	interactions = {}
-	for interaction_file in interactions_files:
+	for interactions_file in interactions_files:
 		with open(interactions_file,'r') as intfile:
 			for line in intfile:
 				interaction = line.strip().split('\t')

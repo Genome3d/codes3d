@@ -13,6 +13,6 @@ if __name__ == "__main__":
 	if not os.path.isdir(args.output_dir):
 		os.makedirs(args.output_dir)
 
-	interactions = codes3d.parse_interactions_file(args.interactions_files)
+	interactions = codes3d.parse_interactions_files(args.interactions_files)
 	genes = codes3d.find_genes(interactions,fragment_database_fp,gene_bed_fp,args.output_dir)
 	
