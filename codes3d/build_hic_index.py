@@ -4,11 +4,11 @@ import argparse,sqlite3,os
 def build_hic_table_index(input_hic_fp,chr1_col,chr2_col,frag1_col,frag2_col,mapq1_col,mapq2_col,mapq_cutoff,output_fp):
         ##Do line count for progress meter
 	print "Determining table size..."
-	eqtl_table = open(input_hic_fp,'r')
+	hic_table = open(input_hic_fp,'r')
 	lines = 0
-	for i in eqtl_table:
+	for i in hic_table:
 	    lines += 1
-	eqtl_table.close()
+	hic_table.close()
 	lines = lines//100*100 #Get an approximation
 	do_linecount = not lines == 0
 	

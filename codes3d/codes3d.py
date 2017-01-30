@@ -177,7 +177,7 @@ def find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,fdr_threshold,local_dat
 					if eqtls[snp][gene]["tissues"][tissue]["qvalue"] < fdr_threshold:
 						num_sig[snp] += 1
 					if not suppress_intermediate_files:
-						eqtlfile.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (snp,eqtls[snp]["snp_info"]["chr"],eqtls[snp]["snp_info"]["locus"],gene,eqtls[snp][gene]["gene_chr"],eqtls[snp][gene]["gene_start"],eqtls[snp][gene]["gene_end"],eqtls[snp][gene]["cell_lines"],eqtls[snp][gene]["cis?"],eqtls[snp][gene]["p_thresh"],tissue,eqtls[snp][gene]["tissues"][tissue]["pvalue"]))
+						eqtlfile.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (snp,eqtls[snp]["snp_info"]["chr"],eqtls[snp]["snp_info"]["locus"],gene,eqtls[snp][gene]["gene_chr"],eqtls[snp][gene]["gene_start"],eqtls[snp][gene]["gene_end"],eqtls[snp][gene]["cell_lines"],eqtls[snp][gene]["cis?"],eqtls[snp][gene]["p_thresh"],tissue,eqtls[snp][gene]["tissues"][tissue]["pvalue"],eqtls[snp][gene]["effect_size"]))
 	return (eqtls,num_sig)
 
 def query_local_databases(eqtl_data_dir,genes,eqtls,p_values):
@@ -192,12 +192,12 @@ def query_local_databases(eqtl_data_dir,genes,eqtls,p_values):
 		for snp in genes.keys():
 			for gene in genes[snp].keys():
 				num_tests += 1
-				for eqtl in eqtl_index.execute("SELECT pvalue FROM eqtls WHERE rsID=? AND gene_symbol=?",(snp,gene)): #Pull down all eQTLs related to a given SNP to test for relevance:
+				for eqtl in eqtl_index.execute("SELECT pvalue, effect_size FROM eqtls WHERE rsID=? AND gene_symbol=?",(snp,gene)): #Pull down all eQTLs related to a given SNP to test for relevance:
 					if not eqtls.has_key(snp):
 						eqtls[snp] = {}
 					if not eqtls[snp].has_key(gene):
 						eqtls[snp][gene] = {"tissues": {}}
-					eqtls[snp][gene]["tissues"][tissue] = {"pvalue": eqtl[0] }
+					eqtls[snp][gene]["tissues"][tissue] = {"pvalue": eqtl[0], "effect_size": eqtl[1] }
 					bisect.insort(p_values,eqtl[0])
 	return num_tests
 
@@ -248,7 +248,8 @@ def query_GTEx_service(snps,genes,eqtls,p_values,num_processes,output_dir):
 		if not eqtls[snp].has_key(gene):
 			eqtls[snp][gene] = {"tissues": {}}
 		p = float(result["pvalue"])
-		eqtls[snp][gene]["tissues"][result["tissueId"]] = { "pvalue": p }
+		effect_size = float(result["beta"])
+		eqtls[snp][gene]["tissues"][result["tissueId"]] = { "pvalue": p, "effect_size": effect_size }
 		bisect.insort(p_values,p)
 	return num_tests
 
@@ -364,7 +365,7 @@ def produce_summary(eqtls,expression_table_fp,output_dir):
 	if not os.path.isdir(output_dir):
 		os.mkdir(output_dir)
 	summary = open(output_dir + "/summary.txt",'w')
-	summary.write("SNP\tSNP_Chromosome\tSNP_Locus\tGene_Name\tGene_Chromosome\tGene_Start\tGene_End\tTissue\tp-value\tq-value\tCell_Lines\tGTEx_cis_p_Threshold\tcis_SNP-gene_interaction\tSNP-gene_Distance\tExpression_Level_In_eQTL_Tissue\tMax_Expressed_Tissue\tMaximum_Expression_Level\tMin_Expressed_Tissue\tMin_Expression_Level\n")
+	summary.write("SNP\tSNP_Chromosome\tSNP_Locus\tGene_Name\tGene_Chromosome\tGene_Start\tGene_End\tTissue\tp-value\tq-value\tEffect_Size\tCell_Lines\tGTEx_cis_p_Threshold\tcis_SNP-gene_interaction\tSNP-gene_Distance\tExpression_Level_In_eQTL_Tissue\tMax_Expressed_Tissue\tMaximum_Expression_Level\tMin_Expressed_Tissue\tMin_Expression_Level\n")
 	gene_df = pandas.read_table(expression_table_fp,index_col="Description")
 	gene_exp = {} #Cache of already-accessed gene expression data
 	for snp in eqtls.keys():
@@ -405,7 +406,7 @@ def produce_summary(eqtls,expression_table_fp,output_dir):
 							print "\t\tWarning: No expression information for %s in %s" % (gene,tissue)
 							gene_exp[gene][tissue] = "NA"
 
-					summary.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t" % (snp,eqtls[snp]["snp_info"]["chr"],eqtls[snp]["snp_info"]["locus"],gene,eqtls[snp][gene]["gene_chr"],eqtls[snp][gene]["gene_start"],eqtls[snp][gene]["gene_end"],tissue,eqtls[snp][gene]["tissues"][tissue]["pvalue"],eqtls[snp][gene]["tissues"][tissue]["qvalue"]))
+					summary.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t" % (snp,eqtls[snp]["snp_info"]["chr"],eqtls[snp]["snp_info"]["locus"],gene,eqtls[snp][gene]["gene_chr"],eqtls[snp][gene]["gene_start"],eqtls[snp][gene]["gene_end"],tissue,eqtls[snp][gene]["tissues"][tissue]["pvalue"],eqtls[snp][gene]["tissues"][tissue]["qvalue"],eqtls[snp][gene]["tissues"][tissue]["effect_size"]))
 					if eqtls[snp][gene]["cell_lines"] == "NA":
 						summary.write("NA")
 					else:
@@ -656,6 +657,37 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 						if eqtls[snp][gene]["tissues"][tissue]["qvalue"] < fdr_threshold:
 							num_sig[snp] += 1
 	return (eqtls,num_sig)
+
+def build_fragment_index(fragment_fp,output_fp):
+	bed_out = open(output_fp + ".bed", 'w')
+	with open(fragment_fp,'r') as fragments:
+		i = 0
+		prev_chr = ""
+		for line in fragments:
+			fragment = line.strip().split(",")
+			chr = fragment[0]
+			if chr == "accession":
+				continue
+			if prev_chr != chr:
+				i = 0
+			bed_out.write("%s\t%s\t%s\t%s\n" % (fragment[0],fragment[2],fragment[3],i))
+			prev_chr = fragment[0]
+			i += 1
+		bed_out.close()
+
+	if os.path.isfile(output_fp + '.db'):
+		os.remove(output_fp + '.db')
+	fragment_index_db = sqlite3.connect(output_fp + '.db')
+	fragment_index = fragment_index_db.cursor()
+	fragment_index.execute("CREATE TABLE fragments (chr text, start integer, end integer, fragment integer)")
+	fragment_index.execute("CREATE INDEX f_index ON fragments (chr,fragment)")
+	
+	with open(output_fp + ".bed",'r') as fragments_bed:
+		for line in fragments_bed:
+			fragment = line.strip().split('\t')
+			fragment_index.execute("INSERT INTO fragments VALUES (?,?,?,?)", [fragment[0][fragment[0].find("chr")+3:],int(fragment[1]),int(fragment[2]),fragment[3]])
+	fragment_index_db.commit()
+
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="")

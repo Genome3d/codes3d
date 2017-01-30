@@ -1,0 +1,40 @@
+#!/bin/sh
+
+# Set up a CoDeS3D working environment.  This should either run the CoDeS3D command directly
+# or else drop the user to a shell where all CoDeS3D commands are accessible from anywhere in the filesystem.
+# Currently only compatible with BaSH.
+
+if [ "$*" = "" ] ; then
+    # In this instance, a CoDeS3D-enabled shell should be started
+    if [ `basename "$SHELL"` = "bash" ] ; then
+        #Set bash dot directory.
+        CODES3DSHELL="$SHELL --rcfile /usr/lib/codes3d/shell/.bashrc"
+    else
+        if which bash > /dev/null ; then
+            CODES3DSHELL="bash --rcfile /usr/lib/qiime/shell/.bashrc"
+        else
+            echo "To start a CoDeS3D shell, you must have the BaSH shell available"
+            echo "and in your path."
+            exit 1
+        fi
+    fi
+
+echo """
+Setting up CoDeS3D environment.
+
+Type 'exit' or press Ctrl+D at any time to leave.
+"""
+
+    eval exec $CODES3DSHELL
+
+else
+    # Otherwise, the user only wishes to run a single command
+
+    # Set up the environment
+    . /usr/lib/qiime/shell/qiime_environment
+
+    cmd=`basename "$1" .py`.py
+    shift
+
+    exec "/usr/lib/codes3d/bin/$cmd" "$@"
+fi
