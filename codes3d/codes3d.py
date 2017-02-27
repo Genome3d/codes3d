@@ -1,9 +1,15 @@
-#!/usr/bin/python
+#!/usr/bin/env python
+
 from configobj import ConfigObj
 from itertools import cycle
 from sets import Set
 from wikipathways_api_client import WikipathwaysApiClient
-import argparse,ast,bisect,json,multiprocessing,os,pandas,pybedtools,re,requests,sqlite3,time
+import argparse,ast,bisect,csv,json,multiprocessing,os,pandas,pybedtools,re,requests,sqlite3,time
+
+from Bio import SeqIO
+from Bio import Restriction
+from Bio.Restriction import RestrictionBatch
+from Bio.Restriction import Restriction_Dictionary
 
 import matplotlib
 matplotlib.use("Agg")
@@ -161,7 +167,7 @@ def find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,fdr_threshold,local_dat
 	p_values = [] #A sorted list of all p-values for use computing FDR
 	num_sig = {} #Number of eQTLs deemed significant under the given threshold
 	num_tests = 0 #Total number of tests done
-	num_tests += query_local_databases(eqtl_data_dir,genes,eqtls,p_values)
+        num_tests += query_local_databases(eqtl_data_dir,genes,eqtls,p_values)
 	if not local_databases_only:
 		num_tests += query_GTEx_service(snps,genes,eqtls,p_values,num_processes,output_dir)
 	process_eqtls(snps,genes,eqtls,gene_database_fp)
@@ -177,7 +183,7 @@ def find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,fdr_threshold,local_dat
 					if eqtls[snp][gene]["tissues"][tissue]["qvalue"] < fdr_threshold:
 						num_sig[snp] += 1
 					if not suppress_intermediate_files:
-						eqtlfile.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (snp,eqtls[snp]["snp_info"]["chr"],eqtls[snp]["snp_info"]["locus"],gene,eqtls[snp][gene]["gene_chr"],eqtls[snp][gene]["gene_start"],eqtls[snp][gene]["gene_end"],eqtls[snp][gene]["cell_lines"],eqtls[snp][gene]["cis?"],eqtls[snp][gene]["p_thresh"],tissue,eqtls[snp][gene]["tissues"][tissue]["pvalue"],eqtls[snp][gene]["effect_size"]))
+						eqtlfile.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (snp,eqtls[snp]["snp_info"]["chr"],eqtls[snp]["snp_info"]["locus"],gene,eqtls[snp][gene]["gene_chr"],eqtls[snp][gene]["gene_start"],eqtls[snp][gene]["gene_end"],eqtls[snp][gene]["cell_lines"],eqtls[snp][gene]["cis?"],eqtls[snp][gene]["p_thresh"],tissue,eqtls[snp][gene]["tissues"][tissue]["pvalue"],eqtls[snp][gene]["tissues"][tissue]["qvalue"],eqtls[snp][gene]["tissues"][tissue]["effect_size"]))
 	return (eqtls,num_sig)
 
 def query_local_databases(eqtl_data_dir,genes,eqtls,p_values):
@@ -192,7 +198,7 @@ def query_local_databases(eqtl_data_dir,genes,eqtls,p_values):
 		for snp in genes.keys():
 			for gene in genes[snp].keys():
 				num_tests += 1
-				for eqtl in eqtl_index.execute("SELECT pvalue, effect_size FROM eqtls WHERE rsID=? AND gene_symbol=?",(snp,gene)): #Pull down all eQTLs related to a given SNP to test for relevance:
+				for eqtl in eqtl_index.execute("SELECT pvalue, effect_size FROM eqtls WHERE rsID=? AND gene_name=?",(snp,gene)): #Pull down all eQTLs related to a given SNP to test for relevance:
 					if not eqtls.has_key(snp):
 						eqtls[snp] = {}
 					if not eqtls[snp].has_key(gene):
@@ -412,10 +418,19 @@ def produce_summary(eqtls,expression_table_fp,output_dir):
 					else:
 						for i,cell_line in enumerate(eqtls[snp][gene]["cell_lines"],start=1):
 							if not i == len(eqtls[snp][gene]["cell_lines"]):
-								summary.write(cell_line + ',')
+								summary.write("%s," % cell_line)
 							else:
 								summary.write(cell_line)
-					summary.write("\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (eqtls[snp][gene]["p_thresh"],eqtls[snp][gene]["cis?"],distance_from_snp,gene_exp[gene][tissue],gene_exp[gene]["max"],gene_exp[gene][gene_exp[gene]["max"]],gene_exp[gene]["min"],gene_exp[gene][gene_exp[gene]["min"]]))
+					summary.write("\t%s\t%s\t%s\t%s\t%s\t" % (eqtls[snp][gene]["p_thresh"],eqtls[snp][gene]["cis?"],distance_from_snp,gene_exp[gene][tissue],gene_exp[gene]["max"]))
+					if gene_exp[gene]["max"] == "NA":
+						summary.write("NA\t")
+					else:
+						summary.write("%s\t" % gene_exp[gene][gene_exp[gene]["max"]])
+					summary.write("%s\t" % gene_exp[gene]["min"])
+					if gene_exp[gene]["min"] == "NA":
+						summary.write("NA\n")
+					else:
+						summary.write("%s\n" % gene_exp[gene][gene_exp[gene]["min"]])
 	summary.close()
 
 def produce_overview(genes,eqtls,num_sig,output_dir):
@@ -620,10 +635,10 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 				except ValueError:
 					gene_start = eqtl[5]
 					gene_end = eqtl[6]
-                                try:
-                                    cell_lines = ast.literal_eval(eqtl[7])
-                                except ValueError:
-                                    cell_lines = eqtl[7]
+					try:
+						cell_lines = ast.literal_eval(eqtl[7])
+					except ValueError:
+						cell_lines = eqtl[7]
 				cis = ast.literal_eval(eqtl[8])
 				try:
 					p_thresh = float(eqtl[9])
@@ -631,6 +646,8 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 					p_thresh = eqtl[9]
 				tissue = eqtl[10]
 				p = float(eqtl[11])
+				q = float(eqtl[12])
+				effect_size = float(eqtl[13])
 				if not eqtls.has_key(snp):
 					eqtls[snp] = {}
 					num_sig[snp] = 0
@@ -644,10 +661,12 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 					eqtls[snp][gene]["p_thresh"] = p_thresh
 					eqtls[snp][gene]["tissues"] = {}
 					eqtls[snp][gene]["cis?"] = cis
-				eqtls[snp][gene]["tissues"][tissue] = {"pvalue": p}
+					eqtls[snp][gene]["tissues"][tissue] = {"pvalue": p, "effect_size": effect_size}
 				if fdr_threshold:
 					bisect.insort(p_values,p)
 					num_tests += 1
+				else:
+					eqtls[snp][gene]["tissues"][tissue]["qvalue"] = q
 	for snp in eqtls.keys():
 		for gene in eqtls[snp].keys():
 			if not gene == "snp_info":
@@ -658,58 +677,401 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 							num_sig[snp] += 1
 	return (eqtls,num_sig)
 
-def build_fragment_index(fragment_fp,output_fp):
-	bed_out = open(output_fp + ".bed", 'w')
-	with open(fragment_fp,'r') as fragments:
-		i = 0
-		prev_chr = ""
-		for line in fragments:
-			fragment = line.strip().split(",")
-			chr = fragment[0]
-			if chr == "accession":
-				continue
-			if prev_chr != chr:
-				i = 0
-			bed_out.write("%s\t%s\t%s\t%s\n" % (fragment[0],fragment[2],fragment[3],i))
-			prev_chr = fragment[0]
-			i += 1
-		bed_out.close()
+def build_snp_index(snp_dir,id_col=4,chr_col=1,locus_col=2,output_fp,config):
+	if not output_fp:
+		output_fp = config["SNP_DATABASE_FP"]
 
-	if os.path.isfile(output_fp + '.db'):
-		os.remove(output_fp + '.db')
-	fragment_index_db = sqlite3.connect(output_fp + '.db')
+	print "Building SNP index..."
+	if not os.path.isdir(snp_dir):
+		print "Error: argument to build SNP index must be a directory."
+		return
+
+	if os.path.isfile(output_fp):
+		upsert = raw_input("WARNING: Upserting input to existing SNP database (%s). Continue? [y/N] " % output_fp)
+		if not upsert.lower() == 'y':
+			print "Did not write to existing SNP database."
+			return
+
+	if not os.path.isdir(os.path.dirname(output_fp)):
+		os.makedirs(os.path.dirname(output_fp))
+
+	snp_index_db = sqlite3.connect(output_fp)
+	snp_index = snp_index_db.cursor()
+	snp_index.execute("CREATE TABLE IF NOT EXISTS snps (rsID text unique, chr text, locus integer)")
+	snp_index.execute("CREATE INDEX IF NOT EXISTS id ON snps (rsID,chr,locus)")
+	res = ""
+	id_col = id_col - 1
+	chr_col = chr_col - 1
+	locus_col = locus_col - 1
+	for bed_fp in os.listdir(snp_dir):
+		print "\tProcessing " + bed_fp
+		bed = open(snp_dir + '/' + bed_fp,'r')
+		for line in bed:
+			if not line.startswith("chr"):
+				continue
+			snp = line.strip().split('\t')
+			try:
+				snp_index.execute("INSERT INTO snps VALUES(?,?,?)",[snp[id_col],snp[chr_col][snp[chr_col].find("chr")+3:],int(snp[locus_col])])
+			except sqlite3.IntegrityError:
+				if res == "":
+					res = raw_input("Warning: database already contains an entry for SNP with ID %s. Overwrite?\n1: Yes\n2: No (default)\n3: Yes To All\n4: No To All\nChoice: " % snp[id_col])
+				if res.strip() == "1":
+					print "Overwriting SNP %s" % snp[id_col]
+					snp_index.execute("DELETE FROM snps WHERE rsID=?",[snp[id_col]])
+					snp_index.execute("INSERT INTO snps VALUES(?,?,?)",[snp[id_col],snp[chr_col][snp[chr_col].find("chr")+3:],int(snp[locus_col])])
+					res = ""
+				elif res.strip() == "3":
+					print "Overwriting SNP %s" % snp[id_col]
+					snp_index.execute("DELETE FROM snps WHERE rsID=?",[snp[id_col]])
+					snp_index.execute("INSERT INTO snps VALUES(?,?,?)",[snp[id_col],snp[chr_col][snp[chr_col].find("chr")+3:],int(snp[locus_col])])
+				elif res.strip() == "4":
+					print "Skipping input SNP %s" % snp[id_col]
+					pass
+				else:
+					print "Skipping input SNP %s" % snp[id_col]
+					res = ""
+		bed.close()
+	print "\tWriting SNP index to file..."
+	snp_index_db.commit()
+	print "Done building SNP index."
+
+def build_hic_table_index(input_hic_fp,chr1_col=3,chr2_col=7,frag1_col=5,frag2_col=9,mapq1_col=10,mapq2_col=11,mapq_cutoff=150,output_fp):
+    if not output_fp:
+		if not input_hic_fp.rfind('.') == -1:
+			output_fp = input_hic_fp[:input_hic_fp.rfind('.')] + ".db"
+		else:
+			output_fp = input_hic_fp + ".db"
+
+	#TODO: Add checks for file existence
+
+    #Do line count for progress meter
+	print "Determining table size..."
+	hic_table = open(input_hic_fp,'r')
+	lines = 0
+	for i in hic_table:
+	    lines += 1
+	hic_table.close()
+	lines = lines//100*100 #Get an approximation
+	do_linecount = not lines == 0
+	
+	int_db = sqlite3.connect(output_fp)
+	interactions = int_db.cursor()
+	interactions.execute("CREATE TABLE IF NOT EXISTS interactions (chr1 text, fragment1 text, chr2 text, fragment2 text)")
+	interactions.execute("CREATE INDEX IF NOT EXISTS i_1 ON interactions (chr1, fragment1)")
+	chr1_col = chr1_col - 1
+	chr2_col = chr2_col - 1
+	frag1_col = frag1_col - 1
+	frag2_col = frag2_col - 1
+	mapq1_col = mapq1_col - 1
+	mapq2_col = mapq2_col - 1
+	with open(input_hic_fp,'r') as rao_table:
+		print "Indexing HiC interaction table..."
+		for i,line in enumerate(rao_table):
+			if do_linecount:
+				if i % (lines/100) == 0:
+					print "\tProcessed %d%%..." % ((float(i)/float(lines))*100)
+			interaction = line.strip().split(' ')
+			if int(interaction[mapq1_col]) >= mapq_cutoff and int(interaction[mapq2_col]) >= mapq_cutoff:
+				chr1 = interaction[chr1_col]
+				frag1 = interaction[frag1_col]
+				chr2 = interaction[chr2_col]
+				frag2 = interaction[frag2_col]
+				interactions.execute("INSERT INTO interactions VALUES(?,?,?,?)", [chr1,frag1,chr2,frag2])
+				interactions.execute("INSERT INTO interactions VALUES(?,?,?,?)", [chr2,frag2,chr1,frag1])
+        int_db.commit()
+        interactions.close()
+	print "Done indexing HiC interaction table."
+
+def digest_genome(genome,restriction_enzyme,output_fp,output_db,do_not_index=False,linear=False):
+	if not output_fp:
+        if not genome.rfind('.') == -1:
+            output_fp = genome[:genome.rfind('.')] + ".bed"
+        else:
+            output_fp = genome + ".bed"
+    if not os.path.isdir(os.path.dirname(output_fp)):
+        os.makedirs(os.path.dirname(output_fp))
+	if os.path.isfile(output_fp):
+		overwrite = raw_input("WARNING: Overwriting existing fragment BED %s. Continue? [y/N] " % output_fp)
+		if not overwrite.lower() == 'y':
+			print "Did not overwrite existing fragment BED."
+			return
+		os.remove(output_fp)
+
+	print "Digesting"
+	if "fasta" in genome or "fa" in genome:
+		genome = SeqIO.parse(open(genome,"rU"), format='fasta')
+	else:
+		genome = SeqIO.parse(open(genome,"rU"), format='genbank')
+
+	with open(output_fp, 'w') as bedfile:
+		output = csv.writer(bedfile,delimiter="\t")
+		for chromosome in genome:
+			print chromosome.id, chromosome.name
+			#Digest the sequence data and return the cut points
+			fragment_num = 0
+			enzyme = RestrictionBatch([restriction_enzyme])
+			for enzyme, cutpoints in enzyme.search(chromosome.seq, linear=linear).items():
+				cutpoints.insert(0,0)
+				#Covert cut points to fragments
+				for index, point in enumerate(cutpoints):
+					#Adjust for start and end of sequence and the offset for the cutpoint
+					#ATTENTION: This will only work for MspI I will have to spend some time to make it compatible with 
+					#		   any restriction enzyme such as ones with blunt ends
+					#startpoint = 0 if cutpoints[index] - 1 < 0 else cutpoints[index] - 1
+					startpoint = 0 if cutpoints[index] - 1 < 0 else cutpoints[index]
+					endpoint = len(chromosome.seq) if index+1 >= len(cutpoints) else cutpoints[index+1] - 1
+
+					accession = chromosome.id
+					version = ''
+					if "." in chromosome.id:
+						accession, version = chromosome.id.split(".")
+					if not accession.startswith("chr"):
+						accession = "chr" + accession
+					output.writerow([accession, startpoint, endpoint, fragment_num])
+					fragment_num += 1
+	if not do_not_index:
+		build_fragment_index(output_fp,output_db)
+
+def build_fragment_index(fragment_fp,output_db):
+	if not output_db:
+		if not fragment_fp.rfind('.') == -1:
+			output_db = fragment_fp[:fragment_fp.rfind('.')] + ".db"
+		else:
+			output_db = fragment_fp + ".db"
+	if os.path.isfile(output_db):
+		overwrite = raw_input("WARNING: Overwriting existing fragment database %s. Continue? [y/N] " % output_db)
+		if not overwrite.lower() == 'y':
+			print "Did not overwrite existing fragment database."
+			return
+		os.remove(output_db)
+
+	if not os.path.isdir(os.path.dirname(output_db)):
+		os.path.makedirs(os.path.dirname(output_db))
+
+	fragment_index_db = sqlite3.connect(output_db)
 	fragment_index = fragment_index_db.cursor()
 	fragment_index.execute("CREATE TABLE fragments (chr text, start integer, end integer, fragment integer)")
 	fragment_index.execute("CREATE INDEX f_index ON fragments (chr,fragment)")
 	
-	with open(output_fp + ".bed",'r') as fragments_bed:
+	with open(fragment_fp,'r') as fragments_bed:
 		for line in fragments_bed:
 			fragment = line.strip().split('\t')
 			fragment_index.execute("INSERT INTO fragments VALUES (?,?,?,?)", [fragment[0][fragment[0].find("chr")+3:],int(fragment[1]),int(fragment[2]),fragment[3]])
 	fragment_index_db.commit()
 
+def build_gene_index(gene_files,symbol_col=27,chr_col=29,start_col=30,end_col=31,p_thresh_col,no_header=False,output_bed,output_db,config):
+	genes = {}
+
+	symbol_col -= 1
+	chr_col -= 1
+	start_col -= 1
+	end_col -= 1
+	if p_thresh_col:
+		p_thresh_col -= 1
+
+	if not output_bed:
+		output_bed = os.path.join(config.get("Defaults","LIB_DIR"),"gene_reference.bed")
+
+	if not output_db:
+		output_bed = os.path.join(config.get("Defaults","LIB_DIR"),"gene_reference.db")
+
+	append_bed = False
+	overwrite_bed = True
+	if os.path.isfile(output_fp):
+		upsert = raw_input("WARNING: Appending input to existing BED file (%s). Continue? [y/N] " % output_fp)
+		if not upsert.lower() == 'y':
+			print "Did not append to existing gene database."
+			overwrite_bed = False
+		else:
+			append_bed = True
+
+	if (overwrite_bed or append_bed) and not os.path.isdir(os.path.dirname(output_fp)):
+		os.makedirs(os.path.dirname(output_fp))
+
+	upsert_db = True
+	if os.path.isfile(output_db):
+		upsert = raw_input("WARNING: Upserting input to existing gene database (%s). Continue? [y/N] " % output_db)
+		if not upsert.lower() == 'y':
+			print "Did not write to existing gene database."
+			upsert_db = False
+
+	if upsert_db and not os.path.isdir(os.path.dirname(output_db)):
+		os.makedirs(os.path.dirname(output_db))
+
+	if (not (overwrite_bed or append_bed)) and not upsert_db:
+		print "No action performed; exiting."
+		return
+
+	if upsert_db:
+		gene_index_db = sqlite3.connect(output_db)
+		gene_index = gene_index_db.cursor()
+		if p_thresh_col:
+			gene_index.execute("CREATE TABLE IF NOT EXISTS genes (symbol text, chr text, start integer, end integer, double p_thresh)")
+		else:
+			gene_index.execute("CREATE TABLE IF NOT EXISTS genes (symbol text, chr text, start integer, end integer)")
+		gene_index.execute("CREATE INDEX IF NOT EXISTS g_index ON genes (symbol)")
+
+	for gene_file in gene_files:
+		#Do line count for progress meter
+		lines = 0
+		with open(gene_file,'r') as genefile:
+			print "Determining table size..."
+			for i in genefile:
+				lines += 1
+			lines = lines//100*100 #Get an approximation
+			do_linecount = not lines == 0
+		
+		with open(gene_file,'r') as genefile:
+			#Determine if input file is a GTEx-supplied gene reference
+			is_gtex_file = gene_file.endswith(".gtf")
+			#If so, process headers accordingly
+			if is_gtex_file:
+				line = genefile.readline()
+				while line.startswith("##"):
+					line = genefile.readline()
+			#Otherwise, process headers according to script options
+			else:
+				if not no_header:
+					genefile.readline()
+				line = genefile.readline()
+			i = 0
+			#For each line
+			while line:
+				if do_linecount:
+					if i % (lines/100) == 0:
+						print "\tProcessed %d%%..." % ((float(i)/float(lines))*100)
+				#If the line is a GTEx file, extract information accordingly
+				if is_gtex_file:
+					entry = line.strip().split('\t')
+					if entry[2] == "gene":
+						gene_stats = entry[8].split(';')
+						gene_symbol = gene_stats[4].strip().split(' ')[1].strip('"')
+						gene_chr = entry[0]
+						gene_start = int(entry[3])
+						gene_end = int(entry[4])
+					else:
+						i += 1
+						line = genefile.readline()
+						continue #Skip if the entry is not for a canonical gene
+				#Otherwise, extract by column
+				else:			
+					gene = line.strip().split('\t')
+					gene_symbol = gene[symbol_col]
+					if gene[chr_col].startswith("chr"):
+						gene_chr = gene[chr_col][3:]
+					else:
+						gene_chr = gene[chr_col]
+					gene_start = int(gene[start_col])
+					gene_end = int(gene[end_col])
+					if p_thresh_col:
+						try:
+							gene_p_thresh = float(gene[p_thresh_col])
+						except ValueError:
+							gene_p_thresh = gene[p_thresh_col]
+				#Enter into index, regardless of input file type
+				if not genes.has_key(gene_symbol):
+					genes[gene_symbol] = { "chr": gene_chr, "start": gene_start, "end": gene_end }
+					if p_thresh_col:
+						genes[gene_symbol]["p_thresh"] = gene_p_thresh
+				else:
+					curr_length = genes[gene_symbol]["end"] - genes[gene_symbol]["start"]
+					if curr_length < abs(gene_end - gene_start):
+						genes[gene_symbol]["start"] = gene_start
+						genes[gene_symbol]["end"] = gene_end
+				line = genefile.readline()
+				i += 1
+
+	bed_out = None
+	if overwrite_bed:
+		bed_out = open(output_bed,'w')
+	elif append_bed:
+		bed_out = open(output_bed,'a')
+	for gene in genes.keys():
+		if bed_out:
+			bed_out.write('chr%s\t%s\t%s\t%s\n' % (genes[gene]["chr"],genes[gene]["start"],genes[gene]["end"],gene))
+		if upsert_db:
+			if p_thresh_col:
+				gene_index.execute("INSERT INTO genes VALUES (?,?,?,?,?)", [gene,genes[gene]["chr"],genes[gene]["start"],genes[gene]["end"],genes[gene]["p_thresh"]])
+			else:
+				gene_index.execute("INSERT INTO genes VALUES (?,?,?,?)", [gene,genes[gene]["chr"],genes[gene]["start"],genes[gene]["end"]])
+	if bed_out:
+		bed_out.close()
+	if upsert_db:
+		gene_index_db.commit()
+		gene_index.close()
+
+def build_eqtl_table_index(table_fp,snp_col=23,gene_symbol_col=27,gene_chr_col=29,gene_start_col=30,gene_stop_col=31,p_val_col=6,effect_size_col=3,output_fp):
+	if not output_fp:
+		if not table_fp.rfind('.') == -1:
+			output_fp = table_fp[:table_fp.rfind('.')] + ".db"
+		else:
+			output_fp = table_fp + ".db"
+
+	if not os.path.isdir(os.path.dirname(output_fp)):
+		os.makedirs(os.path.dirname(output_fp))
+	
+	if os.path.isfile(output_fp):
+		upsert = raw_input("WARNING: Upserting input to existing eQTL database %s. Continue? [y/N] " % output_fp)
+		if not upsert.lower() == 'y':
+			print "Did not write to existing eQTL database."
+			return
+
+	snp_col -= 1
+	gene_symbol_col -= 1
+	gene_chr_col -= 1
+	gene_start_col -= 1
+	gene_stop_col -= 1
+        p_val_col -= 1
+	effect_size_col -= 1
+	table_index_db = sqlite3.connect(output_fp)
+	table_index = table_index_db.cursor()
+	table_index.execute("CREATE TABLE IF NOT EXISTS eqtls (rsID text, gene_name text, gene_chr text, gene_start integer, gene_end integer, pvalue real, effect_size real)")
+	table_index.execute("CREATE INDEX IF NOT EXISTS id ON eqtls (rsID)")
+	##Do line count for progress meter
+	do_linecount = True
+	print "Determining table size..."
+        with open(table_fp,'r') as eqtl_table:
+		lines = 0
+		for i in eqtl_table:
+			lines += 1
+	lines = lines//100*100 #Get an approximation
+	do_linecount = not lines == 0
+	
+	with open(table_fp,'r') as eqtl_table:
+		for i,line in enumerate(eqtl_table):
+			if do_linecount:
+				if i % (lines/100) == 0:
+					print "\tProcessed %d%%..." % ((float(i)/float(lines))*100)
+			if i == 0:
+				continue
+			eqtl = line.strip().split('\t')
+			table_index.execute("INSERT INTO eqtls VALUES (?,?,?,?,?,?,?)",[eqtl[snp_col],eqtl[gene_symbol_col],eqtl[gene_chr_col],eqtl[gene_start_col],eqtl[gene_stop_col],eqtl[p_val_col],eqtl[effect_size_col]])
+	table_index_db.commit()
+	print "Done indexing eQTL table."
+
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="")
 	parser.add_argument("-i","--inputs",nargs='+',required=True,help="The the dbSNP IDs or loci of SNPs of interest in the format \"chr<x>:<locus>\"")
-	parser.add_argument("-c","--config",default="docs/conf.py",help="The configuration file to be used for this hiCquery run (default: conf.py)")
+	parser.add_argument("-c","--config",default=os.path.join(os.path.dirname(__file__),"../../docs/conf.py"),help="The configuration file to be used for this hiCquery run (default: conf.py)")
 	parser.add_argument("-n","--include_cell_lines",nargs='+',help="Space-separated list of cell lines to include (others will be ignored). NOTE: Mutually exclusive with EXCLUDE_CELL_LINES.")
 	parser.add_argument("-x","--exclude_cell_lines",nargs='+',help="Space-separated list of cell lines to exclude (others will be included). NOTE: Mutually exclusive with INCLUDE_CELL_LINES.")
-	parser.add_argument("-o","--output_dir",default="hiCquery_output",help="The directory in which to output results (\"hiCquery_output\" by default).")
+	parser.add_argument("-o","--output_dir",default="codes3d_output",help="The directory in which to output results (\"hiCquery_output\" by default).")
 	parser.add_argument("-l","--local_databases_only",action="store_true",default=False,help="Consider only local databases. Will only include cis-eQTLs if using downloadable GTEx dataset.")
 	parser.add_argument("-s","--suppress_intermediate_files",action="store_true",default=False,help="Do not produce intermediate files. These can be used to run the pipeline from an intermediate stage in the event of interruption.")
 	parser.add_argument("-p","--num_processes",type=int,default=1,help="Desired number of processes for multithreading (default: 1).")
 	parser.add_argument("-f","--fdr_threshold",type=float,default=0.05,help="The FDR threshold to consider an eQTL statistically significant (default: 0.05).")
 	args = parser.parse_args()
-	config = ConfigObj(args.config)
-	snp_database_fp = config["SNP_DATABASE_FP"]
-	hic_data_dir = config["HIC_DATA_DIR"]
-	fragment_bed_fp = config["FRAGMENT_BED_FP"]
-	fragment_database_fp = config["FRAGMENT_DATABASE_FP"]
-	gene_bed_fp = config["GENE_BED_FP"]
-	gene_database_fp = config["GENE_DATABASE_FP"]
-	eqtl_data_dir = config["EQTL_DATA_DIR"]
-	expression_table_fp = config["EXPRESSION_TABLE_FP"]
+	config = configparser.ConfigParser()
+	config.read(args.config_file)
+	snp_database_fp = config.get("Defaults","SNP_DATABASE_FP")
+	hic_data_dir = config.get("Defaults","HIC_DATA_DIR")
+	fragment_bed_fp = config.get("Defaults","FRAGMENT_BED_FP")
+	fragment_database_fp = config.get("Defaults","FRAGMENT_DATABASE_FP")
+	gene_bed_fp = config.get("Defaults","GENE_BED_FP")
+	gene_database_fp = config.get("Defaults","GENE_DATABASE_FP")
+	eqtl_data_dir = config.get("Defaults","EQTL_DATA_DIR")
+	expression_table_fp = config.get("Defaults","EXPRESSION_TABLE_FP")
 	if not os.path.isdir(args.output_dir):
 		os.makedirs(args.output_dir)
 	

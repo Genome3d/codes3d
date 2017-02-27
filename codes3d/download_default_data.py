@@ -1,8 +1,10 @@
-from ftplib import FTP
-import argparse, gzip, os, re, requests, subprocess, sys, wget
+#!/usr/bin/env python
 
-def download_snp_data():
-	local_path = os.path.dirname(os.path.realpath(__file__)) + "/../lib/snps"
+from ftplib import FTP
+import argparse, codes3d, configparser, gzip, os, re, requests, subprocess, sys
+
+def download_snp_data(conf):
+	local_path = os.path.join(conf.get("Defaults","LIB_DIR"),"snps")
 
 	if not os.path.isdir(local_path):
 		os.makedirs(local_path)
@@ -16,30 +18,30 @@ def download_snp_data():
 	for file in files:
 		if re.match(to_dl,file) and re.match(to_dl,file).group(0):
 			print "Retrieving " + file
-			with open("%s/%s" % (local_path, file), 'w') as local_file:
+			with open(os.path.join(local_path, file), 'w') as local_file:
 				ftp.retrbinary('RETR ' + file,local_file.write)
 
 	ftp.quit()
 
-def download_hic_data(to_dl):
+def download_hic_data(to_dl,conf):
 	cell_lines = {}
-	cell_lines["GM12878"] = ["GSM1551552"]
-	cell_lines["HMEC"] = []
-	cell_lines["HUVEC"] = []
-	cell_lines["IMR90"] = []
-	cell_lines["K562"] = []
-	cell_lines["KBM7"] = []
-	cell_lines["NHEK"] = []
+	cell_lines["GM12878"] = ["GSM1551552","GSM1551553","GSM1551554","GSM1551555","GSM1551556","GSM1551557","GSM1551558","GSM1551559","GSM1551560","GSM1551561","GSM1551562","GSM1551563","GSM1551564","GSM1551565","GSM1551566","GSM1551567","GSM1551568","GSM1551569","GSM1551570","GSM1551571","GSM1551572","GSM1551573","GSM1551574"]
+	cell_lines["HeLa"] = ["GSM1551632","GSM1551633","GSM1551634","GSM1551635"]
+	cell_lines["HMEC"] = ["GSM1551607","GSM1551608","GSM1551609","GSM1551610","GSM1551611","GSM1551612"]
+	cell_lines["HUVEC"] = ["GSM1551629","GSM1551630","GSM1551631"]
+	cell_lines["IMR90"] = ["GSM1551599","GSM1551600","GSM1551601","GSM1551602","GSM1551603","GSM1551604","GSM1551605"]
+	cell_lines["K562"] = ["GSM1551618","GSM1551619","GSM1551620","GSM1551621","GSM1551622","GSM1551623"]
+	cell_lines["KBM7"] = ["GSM1551624","GSM1551625","GSM1551626","GSM1551627","GSM1551628"]
+	cell_lines["NHEK"] = ["GSM1551614","GSM1551615","GSM1551616"]
 
-	#hic_dir = os.path.dirname(os.path.realpath(__file__)) + "/../lib/hic_data"
-	hic_dir = "/media/cam/UUI/lib/hic_data"
+	hic_dir = conf.get("Defaults","HIC_DATA_DIR")
 
 	ftp = FTP('ftp.ncbi.nih.gov')
 	ftp.login()
 	ftp.cwd('geo/samples/GSM1551nnn')
 	for key in cell_lines.keys():
 		if (to_dl and key in to_dl) or not to_dl:
-			local_path = '%s/%s' % (hic_dir,key)
+			local_path = os.path.join(hic_dir,key)
 			if not os.path.isdir(local_path):
 				os.makedirs(local_path)
 			for dataset in cell_lines[key]:
@@ -49,42 +51,44 @@ def download_hic_data(to_dl):
 				for file in files:
 					if re.match(regex,file):
 						print "Retrieving " + file
-						with open("%s/%s" % (local_path, file), 'w') as local_file:
+						with open(os.path.join(local_path, file), 'w') as local_file:
 							ftp.retrbinary('RETR ' + file,local_file.write)
+				ftp.cwd('../../')
 	ftp.quit()
 
-def download_gene_reference():
-	local_path = os.path.dirname(os.path.realpath(__file__)) + "/../lib"
+def download_gene_reference(conf):
+	local_path = local_path = conf.get("Defaults","LIB_DIR")
 
 	if not os.path.isdir(local_path):
 		os.makedirs(local_path)
 
 	res = requests.get('http://www.gtexportal.org/static/datasets/gtex_analysis_v6p/reference/gencode.v19.genes.v6p_model.patched_contigs.gtf.gz')
-	with open(local_path + '/gencode.v19.genes.v6p_model.patched_contigs.gtf.gz','wb') as write_gzip:
+	with open(os.path.join(local_path,'/gencode.v19.genes.v6p_model.patched_contigs.gtf.gz'),'wb') as write_gzip:
 		write_gzip.write(res.content)
 
-	with gzip.open(local_path + '/gencode.v19.genes.v6p_model.patched_contigs.gtf.gz','rb') as gzip_in:
+	with gzip.open(os.path.join(local_path, '/gencode.v19.genes.v6p_model.patched_contigs.gtf.gz'),'rb') as gzip_in:
 		genes_file = gzip_in.read()
 
-	with open(local_path + '/gencode.v19.genes.v6p_model.patched_contigs.gtf','w') as genes_out:
+	with open(os.path.join(local_path, '/gencode.v19.genes.v6p_model.patched_contigs.gtf'),'w') as genes_out:
 		genes_out.write(genes_file)
 
-	os.remove(local_path + '/gencode.v19.genes.v6p_model.patched_contigs.gtf.gz')
+	os.remove(os.path.join(local_path, '/gencode.v19.genes.v6p_model.patched_contigs.gtf.gz'))
 
-def download_cis_eqtls():
-	local_path = os.path.dirname(os.path.realpath(__file__)) + "/../lib/eQTLs"
+def download_cis_eqtls(conf):
+	local_path = local_path = os.path.join(conf.get("Defaults","LIB_DIR"))
 
 	if not os.path.isdir(local_path):
 		os.makedirs(local_path)
 
 	eqtl_url = "http://www.gtexportal.org/static/datasets/gtex_analysis_v6/single_tissue_eqtl_data/GTEx_Analysis_V6_eQTLs.tar.gz"
 
-	#subprocess.call(["wget",eqtl_url,"-P",local_path])
-	subprocess.call(["tar","-xzf",local_path + "/GTEx_Analysis_V6_eQTLs.tar.gz","-C",local_path])
+	subprocess.call(["wget",eqtl_url,"-P",local_path])
+	subprocess.call(["tar","-xzf",os.path.join(local_path,"/GTEx_Analysis_V6_eQTLs.tar.gz"),"-C",local_path])
+	for snpgene in os.listdir(os.path.join(local_path,"/eqtls")):
+		codes3d.build_eqtl_index(snpgene,23,27,29,30,31,6,3)
 
-def download_human_genome():
-	#local_path = os.path.dirname(os.path.realpath(__file__)) + "/../lib/hg19"
-	local_path = "/media/cam/UUI/lib/hg19"
+def download_human_genome(conf,do_not_build_dbs):
+	local_path = os.path.join(conf.get("Defaults","LIB_DIR"),"hg19")
 
 	if not os.path.isdir(local_path):
 		os.makedirs(local_path)
@@ -98,43 +102,44 @@ def download_human_genome():
 	for file in files:
 		if re.match(to_dl,file) and re.match(to_dl,file).group(0):
 			print "Retrieving " + file
-			with open("%s/%s" % (local_path, file), 'w') as local_file:
+			with open(os.path.join(local_path, file), 'w') as local_file:
 				ftp.retrbinary('RETR ' + file,local_file.write)
 
 	ftp.quit()
 
-def download_expression_data():
-	local_path = "/media/cam/UUI/lib"
+	print "Decompressing and concatenating files (please be patient, this may take some time)..."
+	print "Running zcat %s/*.gz > Homo_sapiens.GRCh37.75.dna.fa"
+	subprocess.call("zcat %s/*.gz > Homo_sapiens.GRCh37.75.dna.fa" % local_path,shell=True)
 
-	if not os.path.isdir(local_path):
-		os.makedirs(local_path)
-
-	eqtl_url = "http://www.gtexportal.org/static/datasets/gtex_analysis_v6p/rna_seq_data/GTEx_Analysis_v6p_RNA-seq_RNA-SeQCv1.1.8_gene_median_rpkm.gct.gz"
-
-	subprocess.call(["wget",eqtl_url,"-P",local_path])
+	if not do_not_build_dbs:
+		codes3d.digest_genome(os.path.join(local_path,"Homo_sapiens.GRCh37.75.dna.fa"),"MboI",os.path.join(conf.get("Defaults","LIB_DIR"),"Homo_sapiens.GRCh37.75.dna.fragments.bed"),os.path.join(conf.get("Defaults","LIB_DIR"),"Homo_sapiens.GRCh37.75.dna.fragments.db"))
 
 
 if __name__ == "__main__":
-	parser = argparse.ArgumentParser(description="Download the default data files for CoDeS3D")
+	parser = argparse.ArgumentParser(description="Download the default data files for CoDeS3D. These will be downloaded into the default directories specified in the supplied config file (docs/conf.py by default).")
 	parser.add_argument("-s","--snps",action="store_true",default=False,help="Download dbSNP data (build 146).")
-	parser.add_argument("-c","--hic",nargs='*',help="Download Hi-C data. If no arguments are given, this will download Hi-C datasets for cell-lines\
-		GM12878, HMEC, HUVEC, IMR90, K562, KBM7, and NHEK. Additionally, any of these can be passed as an argument in a space-separated list, e.g.\
-		`-c GM12878 NHEK`. NOTE: THIS COMMAND DOWNLOADS TERABYTES WORTH OF DATA, AND MAY RUN FOR A LONG TIME. Consider downloading individual cell lines.")
+	parser.add_argument("-i","--hic",nargs='*',help="Download Hi-C data. If no arguments are given, this will download Hi-C datasets for cell-lines\
+		GM12878, HeLa, HMEC, HUVEC, IMR90, K562, KBM7, and NHEK. Additionally, any of these can be passed as an argument in a space-separated list, e.g.\
+		`-i GM12878 NHEK`. NOTE: THIS COMMAND DOWNLOADS TERABYTES WORTH OF DATA, AND MAY RUN FOR A LONG TIME. Consider downloading individual cell lines.")
 	parser.add_argument("-g","--gene",action="store_true",default=False,help="Download GENCODE gene reference from GTEx portal.")
 	parser.add_argument("-e","--cis_eqtls",action="store_true",default=False,help="Download cis-eQTLs found in GTEx analysis v6.")
 	parser.add_argument("-m","--hg19",action="store_true",default=False,help="Download GRCh37.p13 (hg19) build of the human genome.")
 	parser.add_argument("-x","--expression_data",action="store_true",default=False)
+	parser.add_argument("-c","--config_file",default=os.path.join(os.path.dirname(__file__),"../docs/codes3d.conf"),help="The configuration file to use to resolve library directories.")
+	parser.add_argument("-b","--do_not_build_dbs",action="store_true",default=False,help="Do not build associated databases/indices for downloaded data (default: False).")
 	args = parser.parse_args()
+	config = configparser.ConfigParser()
+	config.read(args.config_file)
 
 	if args.snps:
-		download_snp_data()
-	elif args.hic:
-		download_hic_data(args.hic)
-	elif args.gene:
-		download_gene_reference()
-	elif args.cis_eqtls:
-		download_cis_eqtls()
-	elif args.hg19:
-		download_human_genome()
-	elif args.expression_data:
-		download_expression_data()
+		download_snp_data(config)
+	if args.hic:
+		download_hic_data(args.hic,config)
+	if args.gene:
+		download_gene_reference(config)
+	if args.cis_eqtls:
+		download_cis_eqtls(config)
+	if args.hg19:
+		download_human_genome(config,args.do_not_build_dbs)
+	if args.expression_data:
+		download_expression_data(config)

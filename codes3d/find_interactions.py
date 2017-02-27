@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from configobj import ConfigObj
 import argparse,codes3d,os
 
