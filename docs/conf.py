@@ -6,5 +6,5 @@ FRAGMENT_BED_FP = "/mnt/3dgenome/projects/cekb635/hiCquery_dev/lib/Homo_sapiens.
 FRAGMENT_DATABASE_FP = "/mnt/3dgenome/projects/cekb635/hiCquery_dev/lib/fragmentIndex.db" #The database of fragments to search when assigning SNPs to fragments (GRCh37 digested by MboI by default.)
 GENE_BED_FP = "/mnt/3dgenome/projects/cekb635/codes3d/lib/gene_index_GTEx.bed" #Bed file detailing locations of genes in genome (the UCSC known gene list for hg19 by default).
 GENE_DATABASE_FP = "/mnt/3dgenome/projects/cekb635/codes3d/lib/gene_index_GTEx.db" #Database constructed from the gene BED file.
-EQTL_DATA_DIR = "/mnt/3dgenome/projects/cekb635/hiCquery_dev/lib/eQTLs" #The directory containing databases of eQTL data from various tissues (the GTEx Analysis V6 by default).
+EQTL_DATA_DIR = "/mnt/3dgenome/projects/cekb635/codes3d/lib/eQTLs" #The directory containing databases of eQTL data from various tissues (the GTEx Analysis V6 by default).
 EXPRESSION_TABLE_FP = "/mnt/3dgenome/projects/cekb635/codes3d/lib/GTEx_Analysis_v6p_RNA-seq_gene_median_rpkm.gct" #The tab-separated table containing expression information about GTEx genes (the GTEx Analysis V6 RNA-seq gene median by default).

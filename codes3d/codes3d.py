@@ -192,7 +192,7 @@ def query_local_databases(eqtl_data_dir,genes,eqtls,p_values):
 		for snp in genes.keys():
 			for gene in genes[snp].keys():
 				num_tests += 1
-				for eqtl in eqtl_index.execute("SELECT pvalue FROM eqtls WHERE rsID=? AND gene_symbol=?",(snp,gene)): #Pull down all eQTLs related to a given SNP to test for relevance:
+				for eqtl in eqtl_index.execute("SELECT pvalue FROM eqtls WHERE rsID=? AND gene_name=?",(snp,gene)): #Pull down all eQTLs related to a given SNP to test for relevance:
 					if not eqtls.has_key(snp):
 						eqtls[snp] = {}
 					if not eqtls[snp].has_key(gene):
