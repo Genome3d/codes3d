@@ -735,7 +735,7 @@ def build_snp_index(snp_dir,id_col=4,chr_col=1,locus_col=2,output_fp,config):
 	snp_index_db.commit()
 	print "Done building SNP index."
 
-def build_hic_table_index(input_hic_fp,chr1_col=3,chr2_col=7,frag1_col=5,frag2_col=9,mapq1_col=10,mapq2_col=11,mapq_cutoff=150,output_fp):
+def build_hic_index(input_hic_fp,chr1_col=3,chr2_col=7,frag1_col=5,frag2_col=9,mapq1_col=10,mapq2_col=11,mapq_cutoff=150,output_fp):
     if not output_fp:
 		if not input_hic_fp.rfind('.') == -1:
 			output_fp = input_hic_fp[:input_hic_fp.rfind('.')] + ".db"
@@ -1000,7 +1000,7 @@ def build_gene_index(gene_files,symbol_col=27,chr_col=29,start_col=30,end_col=31
 		gene_index_db.commit()
 		gene_index.close()
 
-def build_eqtl_table_index(table_fp,snp_col=23,gene_symbol_col=27,gene_chr_col=29,gene_start_col=30,gene_stop_col=31,p_val_col=6,effect_size_col=3,output_fp):
+def build_eqtl_index(table_fp,snp_col=23,gene_symbol_col=27,gene_chr_col=29,gene_start_col=30,gene_stop_col=31,p_val_col=6,effect_size_col=3,output_fp):
 	if not output_fp:
 		if not table_fp.rfind('.') == -1:
 			output_fp = table_fp[:table_fp.rfind('.')] + ".db"

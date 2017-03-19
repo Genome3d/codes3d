@@ -3,7 +3,7 @@
 from ftplib import FTP
 import argparse, codes3d, configparser, gzip, os, re, requests, subprocess, sys
 
-def download_snp_data(conf):
+def download_snp_data(conf, do_not_build_dbs):
 	local_path = os.path.join(conf.get("Defaults","LIB_DIR"),"snps")
 
 	if not os.path.isdir(local_path):
@@ -22,8 +22,10 @@ def download_snp_data(conf):
 				ftp.retrbinary('RETR ' + file,local_file.write)
 
 	ftp.quit()
+	if not do_not_build_dbs:
+		codes3d.build_snp_index(local_path,os.join(conf.get("Defaults","LIB_DIR"),output_fp="snp_index_b146.db"),config=conf)
 
-def download_hic_data(to_dl,conf):
+def download_hic_data(to_dl,conf,do_not_build_dbs):
 	cell_lines = {}
 	cell_lines["GM12878"] = ["GSM1551552","GSM1551553","GSM1551554","GSM1551555","GSM1551556","GSM1551557","GSM1551558","GSM1551559","GSM1551560","GSM1551561","GSM1551562","GSM1551563","GSM1551564","GSM1551565","GSM1551566","GSM1551567","GSM1551568","GSM1551569","GSM1551570","GSM1551571","GSM1551572","GSM1551573","GSM1551574"]
 	cell_lines["HeLa"] = ["GSM1551632","GSM1551633","GSM1551634","GSM1551635"]
@@ -56,25 +58,36 @@ def download_hic_data(to_dl,conf):
 				ftp.cwd('../../')
 	ftp.quit()
 
-def download_gene_reference(conf):
+	for cell_line in cell_lines.keys():
+		for hic_fp in os.listdir(os.join(hic_dir,cell_line)):
+			subprocess.call(["tar","-xzf",hic_fp,"-C",os.join(hic_dir,cell_line)])
+			os.remove(hic_fp)
+			if not do_not_build_dbs:
+				codes3d.build_hic_index(hic_fp[:hic_fp.rfind('.gz')])
+
+
+def download_gene_reference(conf,do_not_build_dbs):
 	local_path = local_path = conf.get("Defaults","LIB_DIR")
 
 	if not os.path.isdir(local_path):
 		os.makedirs(local_path)
 
 	res = requests.get('http://www.gtexportal.org/static/datasets/gtex_analysis_v6p/reference/gencode.v19.genes.v6p_model.patched_contigs.gtf.gz')
-	with open(os.path.join(local_path,'/gencode.v19.genes.v6p_model.patched_contigs.gtf.gz'),'wb') as write_gzip:
+	gene_fp = os.path.join(local_path,'gencode.v19.genes.v6p_model.patched_contigs.gtf')
+	with open(gene_fp + ".gz",'wb') as write_gzip:
 		write_gzip.write(res.content)
 
-	with gzip.open(os.path.join(local_path, '/gencode.v19.genes.v6p_model.patched_contigs.gtf.gz'),'rb') as gzip_in:
+	with gzip.open(gene_fp + ".gz",'rb') as gzip_in:
 		genes_file = gzip_in.read()
 
-	with open(os.path.join(local_path, '/gencode.v19.genes.v6p_model.patched_contigs.gtf'),'w') as genes_out:
+	with open(gene_fp,'w') as genes_out:
 		genes_out.write(genes_file)
 
-	os.remove(os.path.join(local_path, '/gencode.v19.genes.v6p_model.patched_contigs.gtf.gz'))
+	os.remove(gene_fp + ".gz")
+	if not do_not_build_dbs:
+		codes3d.build_gene_index([gene_fp],output_bed=gene_fp + ".bed",output_db=gene_fp + ".db")
 
-def download_cis_eqtls(conf):
+def download_cis_eqtls(conf,do_not_build_dbs):
 	local_path = local_path = os.path.join(conf.get("Defaults","LIB_DIR"))
 
 	if not os.path.isdir(local_path):
@@ -84,8 +97,9 @@ def download_cis_eqtls(conf):
 
 	subprocess.call(["wget",eqtl_url,"-P",local_path])
 	subprocess.call(["tar","-xzf",os.path.join(local_path,"/GTEx_Analysis_V6_eQTLs.tar.gz"),"-C",local_path])
-	for snpgene in os.listdir(os.path.join(local_path,"/eqtls")):
-		codes3d.build_eqtl_index(snpgene,23,27,29,30,31,6,3)
+	if not do_not_build_dbs:
+		for snpgene in os.listdir(os.path.join(local_path,"/eqtls")):
+			codes3d.build_eqtl_index(snpgene)
 
 def download_human_genome(conf,do_not_build_dbs):
 	local_path = os.path.join(conf.get("Defaults","LIB_DIR"),"hg19")
@@ -108,7 +122,6 @@ def download_human_genome(conf,do_not_build_dbs):
 	ftp.quit()
 
 	print "Decompressing and concatenating files (please be patient, this may take some time)..."
-	print "Running zcat %s/*.gz > Homo_sapiens.GRCh37.75.dna.fa"
 	subprocess.call("zcat %s/*.gz > Homo_sapiens.GRCh37.75.dna.fa" % local_path,shell=True)
 
 	if not do_not_build_dbs:
@@ -141,5 +154,3 @@ if __name__ == "__main__":
 		download_cis_eqtls(config)
 	if args.hg19:
 		download_human_genome(config,args.do_not_build_dbs)
-	if args.expression_data:
-		download_expression_data(config)
