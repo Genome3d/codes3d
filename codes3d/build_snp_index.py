@@ -15,5 +15,5 @@ if __name__ == "__main__":
 
 	config = configparser.ConfigParser()
 	config.read(args.config_file)
-	codes3d.build_snp_index(args.snp_dir,args.id_col,args.chr_col,args.locus_col,args.output_fp,config)
+	codes3d.build_snp_index(args.snp_dir,args.output_fp,config,args.id_col,args.chr_col,args.locus_col)
 	

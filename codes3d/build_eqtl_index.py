@@ -16,5 +16,5 @@ if __name__ == "__main__":
 	parser.add_argument("-o","--output_fp",help="The output file for the new eQTL index (default: same as the filename of the input file with extension \".db\")")
 	args = parser.parse_args()
 	
-	codes3d.build_eqtl_index(args.input_eqtl_table_fp,args.snp_id_column,args.gene_symbol_column,args.gene_chr_column,args.gene_start_column,args.gene_stop_column,args.p_val_column,args.effect_size_column,args.output_fp)
+	codes3d.build_eqtl_index(args.input_eqtl_table_fp,args.output_fp,args.snp_id_column,args.gene_symbol_column,args.gene_chr_column,args.gene_start_column,args.gene_stop_column,args.p_val_column,args.effect_size_column)
 	
