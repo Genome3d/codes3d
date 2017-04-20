@@ -20,10 +20,12 @@ def download_snp_data(conf, do_not_build_dbs):
 			print "Retrieving " + file
 			with open(os.path.join(local_path, file), 'w') as local_file:
 				ftp.retrbinary('RETR ' + file,local_file.write)
+			print "Extracting " + file
+			subprocess.call(["gzip","-d",os.path.join(local_path,file)])
 
 	ftp.quit()
 	if not do_not_build_dbs:
-		codes3d.build_snp_index(local_path,os.join(conf.get("Defaults","LIB_DIR"),output_fp="snp_index_b146.db"),config=conf)
+		codes3d.build_snp_index(local_path,os.path.join(conf.get("Defaults","LIB_DIR"),"snp_index_b146.db"),conf)
 
 def download_hic_data(to_dl,conf,do_not_build_dbs):
 	cell_lines = {}
@@ -34,36 +36,49 @@ def download_hic_data(to_dl,conf,do_not_build_dbs):
 	cell_lines["IMR90"] = ["GSM1551599","GSM1551600","GSM1551601","GSM1551602","GSM1551603","GSM1551604","GSM1551605"]
 	cell_lines["K562"] = ["GSM1551618","GSM1551619","GSM1551620","GSM1551621","GSM1551622","GSM1551623"]
 	cell_lines["KBM7"] = ["GSM1551624","GSM1551625","GSM1551626","GSM1551627","GSM1551628"]
-	cell_lines["NHEK"] = ["GSM1551614","GSM1551615","GSM1551616"]
+	cell_lines["NHEK"] = ["GSM1551614"]#,"GSM1551615","GSM1551616"]
 
 	hic_dir = conf.get("Defaults","HIC_DATA_DIR")
 
-	ftp = FTP('ftp.ncbi.nih.gov')
+	filelist = {}
+
+	print "Retrieving file list..."
+	ftp_domain = 'ftp.ncbi.nih.gov'
+	ftp_dir = 'geo/samples/GSM1551nnn'
+	ftp = FTP(ftp_domain)
 	ftp.login()
-	ftp.cwd('geo/samples/GSM1551nnn')
+	ftp.cwd(ftp_dir)
 	for key in cell_lines.keys():
 		if (to_dl and key in to_dl) or not to_dl:
-			local_path = os.path.join(hic_dir,key)
-			if not os.path.isdir(local_path):
-				os.makedirs(local_path)
+			filelist[key] = []
 			for dataset in cell_lines[key]:
 				ftp.cwd(dataset + '/suppl')
 				regex = dataset + "_HIC\d{3}_merged_nodups.txt.gz"
 				files = ftp.nlst()
 				for file in files:
 					if re.match(regex,file):
-						print "Retrieving " + file
-						with open(os.path.join(local_path, file), 'w') as local_file:
-							ftp.retrbinary('RETR ' + file,local_file.write)
+						filelist[key].append((dataset,file))
 				ftp.cwd('../../')
 	ftp.quit()
 
-	for cell_line in cell_lines.keys():
-		for hic_fp in os.listdir(os.join(hic_dir,cell_line)):
-			subprocess.call(["tar","-xzf",hic_fp,"-C",os.join(hic_dir,cell_line)])
-			os.remove(hic_fp)
+	print "Downloading files..."
+	for cell_line, datasets in filelist.items():
+		local_path = os.path.join(hic_dir,cell_line)
+		if not os.path.isdir(local_path):
+			os.makedirs(local_path)
+		for dataset in datasets:
+			print "\tRetrieving " + dataset[0]
+			fileurl = "ftp://%s/%s/%s/suppl/%s" % (ftp_domain,ftp_dir,dataset[0],dataset[1])
+			subprocess.call(["wget",fileurl,"-P",local_path])
+
+	print "Processing files..."
+	for cell_line, datasets in filelist.items():
+		local_path = os.path.join(hic_dir,cell_line)
+		for dataset in datasets:
+			print "\tExtracting " + dataset[1]
+			subprocess.call(["gzip","-dk",os.path.join(local_path,dataset[1])])
 			if not do_not_build_dbs:
-				codes3d.build_hic_index(hic_fp[:hic_fp.rfind('.gz')])
+				codes3d.build_hic_index(os.path.join(local_path,dataset[1][:dataset[1].rfind('.gz')]))
 
 
 def download_gene_reference(conf,do_not_build_dbs):
@@ -85,7 +100,7 @@ def download_gene_reference(conf,do_not_build_dbs):
 
 	os.remove(gene_fp + ".gz")
 	if not do_not_build_dbs:
-		codes3d.build_gene_index([gene_fp],output_bed=gene_fp + ".bed",output_db=gene_fp + ".db")
+		codes3d.build_gene_index([gene_fp],gene_fp + ".bed",gene_fp + ".db",conf)
 
 def download_cis_eqtls(conf,do_not_build_dbs):
 	local_path = local_path = os.path.join(conf.get("Defaults","LIB_DIR"))
@@ -145,12 +160,12 @@ if __name__ == "__main__":
 	config.read(args.config_file)
 
 	if args.snps:
-		download_snp_data(config)
+		download_snp_data(config,args.do_not_build_dbs)
 	if args.hic:
-		download_hic_data(args.hic,config)
+		download_hic_data(args.hic,config,args.do_not_build_dbs)
 	if args.gene:
-		download_gene_reference(config)
+		download_gene_reference(config,args.do_not_build_dbs)
 	if args.cis_eqtls:
-		download_cis_eqtls(config)
+		download_cis_eqtls(config,args.do_not_build_dbs)
 	if args.hg19:
 		download_human_genome(config,args.do_not_build_dbs)
