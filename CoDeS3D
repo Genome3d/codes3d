@@ -17,8 +17,8 @@ if [ "$*" = "" ] ; then
     # In this instance, a CoDeS3D-enabled shell should be started
     if [ `basename "$SHELL"` = "bash" ] ; then
         #Set bash dot directory.
-        echo "Running $SHELL --rcfile $CODES3DDIR/docs/.bashrc"
-        CODES3DSHELL="$SHELL --rcfile $CODES3DDIR/docs/.bashrc"
+        echo "Running $SHELL --rcfile $CODES3DDIR/docs/.env.codes3d"
+        CODES3DSHELL="$SHELL --rcfile $CODES3DDIR/docs/.env.codes3d"
     else
         if which bash > /dev/null ; then
             echo "Running bash --rcfile $CODES3DDIR/docs/.bashrc"
@@ -35,7 +35,7 @@ Setting up CoDeS3D environment.
 
 Type 'exit' or press Ctrl+D at any time to leave.
 """
-    # Add codes3d scripts to $PYTHONPATH
+    # Add codes3d scripts to $PATH
     export PATH="$PATH:$CODES3DDIR/codes3d"
     # Run "CoDeS3D shell"
     eval exec $CODES3DSHELL

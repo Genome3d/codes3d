@@ -16,4 +16,4 @@ if __name__ == "__main__":
 	parser.add_argument("-o","--output_fp",help="The output file for the new HiC index (default: same as the filename of the input file with extension \".db\")")
 	args = parser.parse_args()
 
-	codes3d.build_hic_index(args.input_hic_fp,args.chr1_col,args.chr2_col,args.frag1_col,args.frag2_col,args.mapq1_col,args.mapq2_col,args.mapq_cutoff,args.output_fp)
+	codes3d.build_hic_index(args.input_hic_fp,args.output_fp,args.chr1_col,args.chr2_col,args.frag1_col,args.frag2_col,args.mapq1_col,args.mapq2_col,args.mapq_cutoff)

@@ -677,7 +677,7 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 							num_sig[snp] += 1
 	return (eqtls,num_sig)
 
-def build_snp_index(snp_dir,id_col=4,chr_col=1,locus_col=2,output_fp,config):
+def build_snp_index(snp_dir,output_fp,config,id_col=4,chr_col=1,locus_col=2):
 	if not output_fp:
 		output_fp = config["SNP_DATABASE_FP"]
 
@@ -735,8 +735,8 @@ def build_snp_index(snp_dir,id_col=4,chr_col=1,locus_col=2,output_fp,config):
 	snp_index_db.commit()
 	print "Done building SNP index."
 
-def build_hic_index(input_hic_fp,chr1_col=3,chr2_col=7,frag1_col=5,frag2_col=9,mapq1_col=10,mapq2_col=11,mapq_cutoff=150,output_fp):
-    if not output_fp:
+def build_hic_index(input_hic_fp,output_fp=None,chr1_col=3,chr2_col=7,frag1_col=5,frag2_col=9,mapq1_col=10,mapq2_col=11,mapq_cutoff=150):
+	if not output_fp:
 		if not input_hic_fp.rfind('.') == -1:
 			output_fp = input_hic_fp[:input_hic_fp.rfind('.')] + ".db"
 		else:
@@ -744,7 +744,7 @@ def build_hic_index(input_hic_fp,chr1_col=3,chr2_col=7,frag1_col=5,frag2_col=9,m
 
 	#TODO: Add checks for file existence
 
-    #Do line count for progress meter
+	#Do line count for progress meter
 	print "Determining table size..."
 	hic_table = open(input_hic_fp,'r')
 	lines = 0
@@ -784,12 +784,12 @@ def build_hic_index(input_hic_fp,chr1_col=3,chr2_col=7,frag1_col=5,frag2_col=9,m
 
 def digest_genome(genome,restriction_enzyme,output_fp,output_db,do_not_index=False,linear=False):
 	if not output_fp:
-        if not genome.rfind('.') == -1:
-            output_fp = genome[:genome.rfind('.')] + ".bed"
-        else:
-            output_fp = genome + ".bed"
-    if not os.path.isdir(os.path.dirname(output_fp)):
-        os.makedirs(os.path.dirname(output_fp))
+		if not genome.rfind('.') == -1:
+			output_fp = genome[:genome.rfind('.')] + ".bed"
+		else:
+			output_fp = genome + ".bed"
+	if not os.path.isdir(os.path.dirname(output_fp)):
+		os.makedirs(os.path.dirname(output_fp))
 	if os.path.isfile(output_fp):
 		overwrite = raw_input("WARNING: Overwriting existing fragment BED %s. Continue? [y/N] " % output_fp)
 		if not overwrite.lower() == 'y':
@@ -859,7 +859,7 @@ def build_fragment_index(fragment_fp,output_db):
 			fragment_index.execute("INSERT INTO fragments VALUES (?,?,?,?)", [fragment[0][fragment[0].find("chr")+3:],int(fragment[1]),int(fragment[2]),fragment[3]])
 	fragment_index_db.commit()
 
-def build_gene_index(gene_files,symbol_col=27,chr_col=29,start_col=30,end_col=31,p_thresh_col,no_header=False,output_bed,output_db,config):
+def build_gene_index(gene_files,output_bed,output_db,config,symbol_col=27,chr_col=29,start_col=30,end_col=31,p_thresh_col=None,no_header=False):
 	genes = {}
 
 	symbol_col -= 1
@@ -877,16 +877,16 @@ def build_gene_index(gene_files,symbol_col=27,chr_col=29,start_col=30,end_col=31
 
 	append_bed = False
 	overwrite_bed = True
-	if os.path.isfile(output_fp):
-		upsert = raw_input("WARNING: Appending input to existing BED file (%s). Continue? [y/N] " % output_fp)
+	if os.path.isfile(output_bed):
+		upsert = raw_input("WARNING: Appending input to existing BED file (%s). Continue? [y/N] " % output_bed)
 		if not upsert.lower() == 'y':
 			print "Did not append to existing gene database."
 			overwrite_bed = False
 		else:
 			append_bed = True
 
-	if (overwrite_bed or append_bed) and not os.path.isdir(os.path.dirname(output_fp)):
-		os.makedirs(os.path.dirname(output_fp))
+	if (overwrite_bed or append_bed) and not os.path.isdir(os.path.dirname(output_bed)):
+		os.makedirs(os.path.dirname(output_bed))
 
 	upsert_db = True
 	if os.path.isfile(output_db):
@@ -1000,7 +1000,7 @@ def build_gene_index(gene_files,symbol_col=27,chr_col=29,start_col=30,end_col=31
 		gene_index_db.commit()
 		gene_index.close()
 
-def build_eqtl_index(table_fp,snp_col=23,gene_symbol_col=27,gene_chr_col=29,gene_start_col=30,gene_stop_col=31,p_val_col=6,effect_size_col=3,output_fp):
+def build_eqtl_index(table_fp,output_fp=None,snp_col=23,gene_symbol_col=27,gene_chr_col=29,gene_start_col=30,gene_stop_col=31,p_val_col=6,effect_size_col=3):
 	if not output_fp:
 		if not table_fp.rfind('.') == -1:
 			output_fp = table_fp[:table_fp.rfind('.')] + ".db"
