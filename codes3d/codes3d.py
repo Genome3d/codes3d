@@ -1,10 +1,9 @@
 #!/usr/bin/env python
 
-from configobj import ConfigObj
 from itertools import cycle
 from sets import Set
 from wikipathways_api_client import WikipathwaysApiClient
-import argparse,ast,bisect,csv,json,multiprocessing,os,pandas,pybedtools,re,requests,sqlite3,time
+import argparse,ast,bisect,configparser,csv,json,multiprocessing,os,pandas,pybedtools,re,requests,sqlite3,time
 
 from Bio import SeqIO
 from Bio import Restriction
@@ -43,10 +42,10 @@ def process_inputs(inputs,snp_database_fp,fragment_database_fp,output_dir,suppre
 						print "Warning: %s does not exist in SNP database." % id
 					else:
 						#Query fragmentIndex to find out to which fragment the SNP belongs
-						fragment_index.execute("SELECT fragment FROM fragments WHERE chr=? AND start<=? AND end>=?",["chr" + snp[1],snp[2],snp[2]])
+						fragment_index.execute("SELECT fragment FROM fragments WHERE chr=? AND start<=? AND end>=?",[snp[1],snp[2],snp[2]])
 						snp_fragment_result = fragment_index.fetchone()
 						if snp_fragment_result == None:
-							print "Warning: error retrieving SNP fragment for SNP " + snp
+							print "Warning: error retrieving SNP fragment for SNP " + snp[0]
 						else:
 							snps[snp[0]]={ "chr": snp[1], "locus": snp[2], "frag": snp_fragment_result[0] }
 		else:
@@ -62,10 +61,10 @@ def process_inputs(inputs,snp_database_fp,fragment_database_fp,output_dir,suppre
 				print "Warning: %s does not exist in SNP database." % input
 			else:
 				#Query fragmentIndex to find out to which fragment the SNP belongs
-				fragment_index.execute("SELECT fragment FROM fragments WHERE chr=? AND start<=? AND end>=?",["chr" + snp[1],snp[2],snp[2]])
+				fragment_index.execute("SELECT fragment FROM fragments WHERE chr=? AND start<=? AND end>=?",[snp[1],snp[2],snp[2]])
 				snp_fragment_result = fragment_index.fetchone()
 				if snp_fragment_result == None:
-					print "Warning: error retrieving SNP fragment for SNP " + snp
+					print "Warning: error retrieving SNP fragment for SNP " + snp[0]
 				else:
 					snps[snp[0]]={ "chr": snp[1], "locus": snp[2], "frag": snp_fragment_result[0] }
 		
@@ -124,7 +123,7 @@ def find_genes(interactions,fragment_database_fp,gene_bed_fp,output_dir,suppress
 			snpgenes_exist = False
 			temp_snp_bed = open(output_dir + "/temp_snp_bed.bed",'w')
 			for interaction in interactions[snp][cell_line]:
-				fragment_index.execute("SELECT start, end FROM fragments WHERE chr=? and fragment=?",["chr" + interaction[0],interaction[1]])
+				fragment_index.execute("SELECT start, end FROM fragments WHERE chr=? and fragment=?",[interaction[0],interaction[1]])
 				fragment_pos = fragment_index.fetchone()
 				if fragment_pos == None:
 					print "\tWarning: error retrieving fragment %s on chromosome %s" % (interaction[1],interaction[0])
@@ -1053,7 +1052,7 @@ def build_eqtl_index(table_fp,output_fp=None,snp_col=23,gene_symbol_col=27,gene_
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="")
 	parser.add_argument("-i","--inputs",nargs='+',required=True,help="The the dbSNP IDs or loci of SNPs of interest in the format \"chr<x>:<locus>\"")
-	parser.add_argument("-c","--config",default=os.path.join(os.path.dirname(__file__),"../../docs/conf.py"),help="The configuration file to be used for this hiCquery run (default: conf.py)")
+	parser.add_argument("-c","--config",default=os.path.join(os.path.dirname(__file__),"../docs/codes3d.conf"),help="The configuration file to be used for this hiCquery run (default: conf.py)")
 	parser.add_argument("-n","--include_cell_lines",nargs='+',help="Space-separated list of cell lines to include (others will be ignored). NOTE: Mutually exclusive with EXCLUDE_CELL_LINES.")
 	parser.add_argument("-x","--exclude_cell_lines",nargs='+',help="Space-separated list of cell lines to exclude (others will be included). NOTE: Mutually exclusive with INCLUDE_CELL_LINES.")
 	parser.add_argument("-o","--output_dir",default="codes3d_output",help="The directory in which to output results (\"hiCquery_output\" by default).")
@@ -1063,7 +1062,7 @@ if __name__ == "__main__":
 	parser.add_argument("-f","--fdr_threshold",type=float,default=0.05,help="The FDR threshold to consider an eQTL statistically significant (default: 0.05).")
 	args = parser.parse_args()
 	config = configparser.ConfigParser()
-	config.read(args.config_file)
+	config.read(args.config)
 	snp_database_fp = config.get("Defaults","SNP_DATABASE_FP")
 	hic_data_dir = config.get("Defaults","HIC_DATA_DIR")
 	fragment_bed_fp = config.get("Defaults","FRAGMENT_BED_FP")

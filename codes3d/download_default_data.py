@@ -29,7 +29,7 @@ def download_snp_data(conf, do_not_build_dbs):
 		print "Extracting " + file
 		subprocess.call(["gzip","-d",os.path.join(local_path,file)])
 	if not do_not_build_dbs:
-		codes3d.build_snp_index(local_path,os.path.join(conf.get("Defaults","LIB_DIR"),"snp_index_b146.db"),conf)
+		codes3d.build_snp_index(local_path,os.path.join(conf.get("Defaults","LIB_DIR"),"snp_index_dbSNP_b146.db"),conf)
 
 def download_hic_data(to_dl,conf,do_not_build_dbs):
 	cell_lines = {}
@@ -72,19 +72,19 @@ def download_hic_data(to_dl,conf,do_not_build_dbs):
 		local_path = os.path.join(hic_dir,cell_line)
 		if not os.path.isdir(local_path):
 			os.makedirs(local_path)
-		for dataset in datasets:
-			print "\tRetrieving " + dataset[0]
-			fileurl = "ftp://%s/%s/%s/suppl/%s" % (ftp_domain,ftp_dir,dataset[0],dataset[1])
+		for dataset_file in datasets:
+			print "\tRetrieving " + dataset_file[0]
+			fileurl = "ftp://%s/%s/%s/suppl/%s" % (ftp_domain,ftp_dir,dataset_file[0],dataset_file[1])
 			subprocess.call(["wget",fileurl,"-P",local_path])
 
 	print "Processing files..."
 	for cell_line, datasets in filelist.items():
 		local_path = os.path.join(hic_dir,cell_line)
-		for dataset in datasets:
-			print "\tExtracting " + dataset[1]
-			subprocess.call(["gzip","-dk",os.path.join(local_path,dataset[1])])
+		for dataset_file in datasets:
+			print "\tExtracting " + dataset_file[1]
+			subprocess.call(["gzip","-dk",os.path.join(local_path,dataset_file[1])])
 			if not do_not_build_dbs:
-				codes3d.build_hic_index(os.path.join(local_path,dataset[1][:dataset[1].rfind('.gz')]))
+				codes3d.build_hic_index(os.path.join(local_path,dataset_file[1][:dataset_file[1].rfind('.gz')]))
 
 #Tested, working
 def download_gene_reference(conf,do_not_build_dbs):
