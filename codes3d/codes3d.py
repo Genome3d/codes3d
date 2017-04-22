@@ -694,7 +694,7 @@ def build_snp_index(snp_dir,output_fp,config,id_col=4,chr_col=1,locus_col=2,do_n
 	if not os.path.isdir(os.path.dirname(output_fp)):
 		os.makedirs(os.path.dirname(output_fp))
 
-	"""snp_index_db = sqlite3.connect(output_fp)
+	snp_index_db = sqlite3.connect(output_fp)
 	snp_index = snp_index_db.cursor()
 	snp_index.execute("CREATE TABLE IF NOT EXISTS snps (rsID text unique, chr text, locus integer)")
 	snp_index.execute("CREATE INDEX IF NOT EXISTS id ON snps (rsID,chr,locus)")
@@ -731,7 +731,7 @@ def build_snp_index(snp_dir,output_fp,config,id_col=4,chr_col=1,locus_col=2,do_n
 					res = ""
 		bed.close()
 	print "\tWriting SNP index to file..."
-	snp_index_db.commit()"""
+	snp_index_db.commit()
 	print "Done building SNP index."
 	if not do_not_tidy_up:
 		print "Tidying up..."
@@ -744,7 +744,12 @@ def build_hic_index(input_hic_fp,output_fp=None,chr1_col=3,chr2_col=7,frag1_col=
 		else:
 			output_fp = input_hic_fp + ".db"
 
-	#TODO: Add checks for file existence
+	if os.path.isfile(output_fp):
+		overwrite = raw_input("WARNING: Overwriting existing HiC database (%s). Continue? [y/N] " % output_fp)
+		if not upsert.lower() == 'y':
+			print "Did not overwrite existing HiC database."
+			return
+		os.remove(output_fp)
 
 	#Do line count for progress meter
 	print "Determining table size..."
