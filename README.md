@@ -33,12 +33,12 @@ You will also need some data files with which to run your data. The simplest way
 The CoDeS3D interface is heavily inspired by the Qiime interface (J Gregory Caporaso *et al*., Nature Methods, 2010; doi:10.1038/nmeth.f.303). Running the CoDeS3D script in the codes3d directory will drop the user into the CoDeS3D shell, in which all CoDeS3D scripts are accessible from anywhere in the system, e.g.
 
 ```
-/home/cam/Documents/codes3d$ ./CoDeS3D
+/home/alcamerone/Documents/codes3d$ ./CoDeS3D
  Setting up CoDeS3D environment.
  
  Type 'exit' or press Ctrl+D at any time to leave.
-/home/cam/Documents/codes3d$ CoDeS3D> cd ../project
-/home/cam/Documents/project$ CoDeS3D> codes3d.py -h
+/home/alcamerone/Documents/codes3d$ CoDeS3D> cd ../project
+/home/alcamerone/Documents/project$ CoDeS3D> codes3d.py -h
  usage: codes3d.py [-h] -i INPUTS [INPUTS ...] [-c CONFIG]
                   [-n INCLUDE_CELL_LINES [INCLUDE_CELL_LINES ...]]
                   [-x EXCLUDE_CELL_LINES [EXCLUDE_CELL_LINES ...]]
