@@ -1,6 +1,6 @@
-#CoDeS3D: Contextualising Developmental SNPs in Three Dimensions
+# CoDeS3D: Contextualising Developmental SNPs in Three Dimensions
 
-##Installation
+## Installation
 
 Clone the repository using the following command:
 
@@ -10,23 +10,23 @@ git clone https://github.com/alcamerone/codes3d.git
 
 You will then need to install the CoDeS3D dependencies by running `setup.py` (you may need to run this using `sudo`). CoDeS3D depends on the following packages:
 
--apt
-  -
-  -
--pip
-  -configparser
-  -pandas
-  -pybedtools
-  -requests
-  -biopython
-  -matplotlib
--The [WikiPathways Python API client](https://github.com/wikipathways/wikipathways-api-client-py)
+- apt
+  - 
+  - 
+- pip
+  - configparser
+  - pandas
+  - pybedtools
+  - requests
+  - biopython
+  - matplotlib
+- The [WikiPathways Python API client](https://github.com/wikipathways/wikipathways-api-client-py)
 
 You will then be able to run CoDeS3D scripts!
 
 You will also need some data files with which to run your data. The simplest way to acquire these are using the `download_default_data.py` script. This will download the default data to the library directory specified by `libdir` in `docs/codes3d.conf`. Please note that most of the data files are very large, and this step is likely to take a long time, particularly if you wish to use all of the available HiC datasets. Note also that the total size of all available datasets is hundreds of gigabytes, and will require a large disk with a lot of free space.
 
-##Basic Usage
+## Basic Usage
 
 The CoDeS3D interface is heavily inspired by the Qiime interface (J Gregory Caporaso *et al*., Nature Methods, 2010; doi:10.1038/nmeth.f.303). Running the CoDeS3D script in the codes3d directory will drop the user into the CoDeS3D shell, in which all CoDeS3D scripts are accessible from anywhere in the system, e.g.
 
