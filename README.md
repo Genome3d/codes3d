@@ -8,12 +8,14 @@ Clone the repository using the following command:
 git clone https://github.com/alcamerone/codes3d.git
 ```
 
-You will then need to install the CoDeS3D dependencies by running `setup.py` (you may need to run this using `sudo`). CoDeS3D depends on the following packages:
-
-- apt
-  - 
-  - 
-- pip
+You will then need to install the CoDeS3D dependencies by running `setup.sh` (you may need to run this using `sudo`). CoDeS3D depends on the following:
+- Ubuntu 14.04+ (untested on other systems)
+- Python 2.7.9+
+- apt packages:
+  - bedtools
+  - libxslt1-dev
+  - libxml2-dev
+- pip packages:
   - configparser
   - pandas
   - pybedtools
