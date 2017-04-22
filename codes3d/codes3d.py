@@ -230,7 +230,7 @@ def query_GTEx_service(snps,genes,eqtls,p_values,num_processes,output_dir):
 		time.sleep(10)
 	procPool.close()
 	procPool.join()
-	print "\t\tNumber of GTEx responses received: " + str(len(gtexResponses))
+	print "\t\tGTEx responses received: " + str(len(gtexResponses))
 	results = []
 	failed_requests = []
 	for response in gtexResponses:
@@ -328,7 +328,6 @@ def send_GTEx_query(num,num_reqLists,reqList,gtexResponses):
 			while True:
 				print "\t\tSending request %s of %s" % (num,num_reqLists)
 				res = requests.post("http://gtexportal.org/api/v6p/dyneqtl?v=clversion", json=reqList)
-				print "\t\tRequest %s response: %s" % (num,res.status_code)
 				if res.status_code == 200:
 					gtexResponses.append((reqList,res))
 					time.sleep(30)
