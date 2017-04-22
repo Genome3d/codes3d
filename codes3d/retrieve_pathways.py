@@ -1,5 +1,5 @@
-from configobj import ConfigObj
-from sets import Set
+#!/usr/bin/env python
+
 import argparse,codes3d,os
 
 if __name__ == "__main__":

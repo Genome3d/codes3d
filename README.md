@@ -1,24 +1,61 @@
-The hiC_query script expects the following file structure:
+# CoDeS3D: Contextualising Developmental SNPs in Three Dimensions
 
+## Installation
 
-	[base hiC_query directory]/
-		eQTLs/
-			[databases created from tissue-specific eQTL tables, provided by GTEx in the file GTEx_Analysis_V6_eQTLs.tar.gz and created using index_tables.py with the -e option]
-		hic_data/
-			[one directory for each cell line]/
-				<replicate_name>.db (Databases made from HiC interaction table, e.g. tables by Rao et al. or tables in similar format, using index_tables.py with the -i option.)
-		snps/ (Optional if snpIndex.db is present in base hiC_query directory)
-			[BED files for dbSNP SNPs for each chromosome]
-		snpIndex.db (Will be created automatically from the contents of snps/ if it does not exist)
-		hiC_query.py
-		index_tables.py (Not necessary for querying, but required if wishing to build databases from source tables, or use custom tables)
+Clone the repository using the following command:
 
-Some test data is available in the directories beginning with "test". To run the test data, use the programs as follows:
+```
+git clone https://github.com/alcamerone/codes3d.git
+```
 
-To index the HiC table, run:
+You will then need to install the CoDeS3D dependencies by running `setup.py` (you may need to run this using `sudo`). CoDeS3D depends on the following packages:
 
-		./index_tables.py -t test_hic_data/TEST/test_hic.txt -i (this will produce the file test_hic.db in the same directory by default.)
+- apt
+  - 
+  - 
+- pip
+  - configparser
+  - pandas
+  - pybedtools
+  - requests
+  - biopython
+  - matplotlib
+- The [WikiPathways Python API client](https://github.com/wikipathways/wikipathways-api-client-py)
 
-To query the HiC table against the eQTL databases using one of the supplied test SNPs, run:
+You will then be able to run CoDeS3D scripts!
 
-		./hiC_query.py -i <any combination of [rs001 rs002 rs003 rs004 rs005 rs006 rs007 rs008 rs009 rs010 rs011 rs012 rs013 rs014 rs015 rs016 rs017 rs018 rs019 rs020 rs021 rs022 rs023 rs024 rs025]> -t test_snps -c test_hic_data -e test_eQTLs
+You will also need some data files with which to run your data. The simplest way to acquire these are using the `download_default_data.py` script. This will download the default data to the library directory specified by `libdir` in `docs/codes3d.conf`. Please note that most of the data files are very large, and this step is likely to take a long time, particularly if you wish to use all of the available HiC datasets. Note also that the total size of all available datasets is hundreds of gigabytes, and will require a large disk with a lot of free space.
+
+## Basic Usage
+
+The CoDeS3D interface is heavily inspired by the Qiime interface (J Gregory Caporaso *et al*., Nature Methods, 2010; doi:10.1038/nmeth.f.303). Running the CoDeS3D script in the codes3d directory will drop the user into the CoDeS3D shell, in which all CoDeS3D scripts are accessible from anywhere in the system, e.g.
+
+```
+/home/cam/Documents/codes3d$ ./CoDeS3D
+ Setting up CoDeS3D environment.
+ 
+ Type 'exit' or press Ctrl+D at any time to leave.
+/home/cam/Documents/codes3d$ CoDeS3D> cd ../project
+/home/cam/Documents/project$ CoDeS3D> codes3d.py -h
+ usage: codes3d.py [-h] -i INPUTS [INPUTS ...] [-c CONFIG]
+                  [-n INCLUDE_CELL_LINES [INCLUDE_CELL_LINES ...]]
+                  [-x EXCLUDE_CELL_LINES [EXCLUDE_CELL_LINES ...]]
+                  [-o OUTPUT_DIR] [-l] [-s] [-p NUM_PROCESSES]
+                  [-f FDR_THRESHOLD]
+ [...]
+```
+
+If you want to make CoDeS3D accessible from anywhere in your system, you can add the codes3d directory to your PATH by appending this line to the bottom of your `.bash_profile`/`.bashrc` file in your home directory:
+
+```
+export PATH=$PATH:/path/to/CoDeS3D # Replace "/path/to" with the path where the CoDeS3D program is stored
+```
+
+Alternatively, you can make a link to the program in a directory which is already in your path (e.g. `/usr/local/bin`) using the following commands:
+
+```
+cd /usr/local/bin
+sudo ln -s /path/to/CoDeS3D CoDeS3D # Replace "/path/to" with the path where the CoDeS3D program is stored
+```
+
+For details on the expected inputs of any CoDeS3D script, simply run the script with the `-h` argument, as in the example above.
