@@ -676,7 +676,7 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 							num_sig[snp] += 1
 	return (eqtls,num_sig)
 
-def build_snp_index(snp_dir,output_fp,config,id_col=4,chr_col=1,locus_col=2):
+def build_snp_index(snp_dir,output_fp,config,id_col=4,chr_col=1,locus_col=2,do_not_tidy_up=False):
 	if not output_fp:
 		output_fp = config["SNP_DATABASE_FP"]
 
@@ -733,8 +733,11 @@ def build_snp_index(snp_dir,output_fp,config,id_col=4,chr_col=1,locus_col=2):
 	print "\tWriting SNP index to file..."
 	snp_index_db.commit()
 	print "Done building SNP index."
+	if not do_not_tidy_up:
+		print "Tidying up..."
+		shutil.rmtree(snp_dir)
 
-def build_hic_index(input_hic_fp,output_fp=None,chr1_col=3,chr2_col=7,frag1_col=5,frag2_col=9,mapq1_col=10,mapq2_col=11,mapq_cutoff=150):
+def build_hic_index(input_hic_fp,output_fp=None,chr1_col=3,chr2_col=7,frag1_col=5,frag2_col=9,mapq1_col=10,mapq2_col=11,mapq_cutoff=150,do_not_tidy_up=False):
 	if not output_fp:
 		if not input_hic_fp.rfind('.') == -1:
 			output_fp = input_hic_fp[:input_hic_fp.rfind('.')] + ".db"
@@ -780,13 +783,16 @@ def build_hic_index(input_hic_fp,output_fp=None,chr1_col=3,chr2_col=7,frag1_col=
         int_db.commit()
         interactions.close()
 	print "Done indexing HiC interaction table."
+	if not do_not_tidy_up:
+		print "Tidying up..."
+		os.remove(input_hic_fp)
 
 def digest_genome(genome,restriction_enzyme,output_fp,output_db,do_not_index=False,linear=False):
 	if not output_fp:
 		if not genome.rfind('.') == -1:
-			output_fp = genome[:genome.rfind('.')] + ".bed"
+			output_fp = "%s.%s.fragments.bed" % (genome[:genome.rfind('.')],restriction_enzyme)
 		else:
-			output_fp = genome + ".bed"
+			output_fp = "%s.%s.fragments.bed" % (genome,restriction_enzyme)
 	if not os.path.isdir(os.path.dirname(output_fp)):
 		os.makedirs(os.path.dirname(output_fp))
 	if os.path.isfile(output_fp):
@@ -858,7 +864,7 @@ def build_fragment_index(fragment_fp,output_db):
 			fragment_index.execute("INSERT INTO fragments VALUES (?,?,?,?)", [fragment[0][fragment[0].find("chr")+3:],int(fragment[1]),int(fragment[2]),fragment[3]])
 	fragment_index_db.commit()
 
-def build_gene_index(gene_files,output_bed,output_db,config,symbol_col=27,chr_col=29,start_col=30,end_col=31,p_thresh_col=None,no_header=False):
+def build_gene_index(gene_files,output_bed,output_db,config,symbol_col=27,chr_col=29,start_col=30,end_col=31,p_thresh_col=None,no_header=False,do_not_tidy_up=False):
 	genes = {}
 
 	symbol_col -= 1
@@ -999,7 +1005,12 @@ def build_gene_index(gene_files,output_bed,output_db,config,symbol_col=27,chr_co
 		gene_index_db.commit()
 		gene_index.close()
 
-def build_eqtl_index(table_fp,output_fp=None,snp_col=23,gene_symbol_col=27,gene_chr_col=29,gene_start_col=30,gene_stop_col=31,p_val_col=6,effect_size_col=3):
+	if not do_not_tidy_up:
+		print "Tidying up..."
+		for gene_file in gene_files:
+			os.remove(gene_file)
+
+def build_eqtl_index(table_fp,output_fp=None,snp_col=23,gene_symbol_col=27,gene_chr_col=29,gene_start_col=30,gene_stop_col=31,p_val_col=6,effect_size_col=3,do_not_tidy_up=False):
 	if not output_fp:
 		if not table_fp.rfind('.') == -1:
 			output_fp = table_fp[:table_fp.rfind('.')] + ".db"
@@ -1047,6 +1058,9 @@ def build_eqtl_index(table_fp,output_fp=None,snp_col=23,gene_symbol_col=27,gene_
 			table_index.execute("INSERT INTO eqtls VALUES (?,?,?,?,?,?,?)",[eqtl[snp_col],eqtl[gene_symbol_col],eqtl[gene_chr_col],eqtl[gene_start_col],eqtl[gene_stop_col],eqtl[p_val_col],eqtl[effect_size_col]])
 	table_index_db.commit()
 	print "Done indexing eQTL table."
+	if not do_not_tidy_up:
+		print "Tidying up..."
+		os.remove(table_fp)
 
 
 if __name__ == "__main__":

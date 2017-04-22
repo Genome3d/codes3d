@@ -4,7 +4,7 @@ from ftplib import FTP
 import argparse, codes3d, configparser, gzip, os, re, requests, subprocess, sys
 
 # Tested, working
-def download_snp_data(conf, do_not_build_dbs):
+def download_snp_data(conf, do_not_build_dbs, do_not_tidy_up):
 	local_path = os.path.join(conf.get("Defaults","LIB_DIR"),"snps")
 
 	if not os.path.isdir(local_path):
@@ -25,13 +25,14 @@ def download_snp_data(conf, do_not_build_dbs):
 	for file in file_list:
 		print "Retrieving " + file
 		snp_url = "ftp://%s/%s/%s" % (nih_domain,ftp_dir,file)
-		subprocess.call(["wget",snp_url,"-P",local_path])
+		#subprocess.call(["wget",snp_url,"-P",local_path])
 		print "Extracting " + file
-		subprocess.call(["gzip","-d",os.path.join(local_path,file)])
+		#subprocess.call(["gzip","-d",os.path.join(local_path,file)])
 	if not do_not_build_dbs:
-		codes3d.build_snp_index(local_path,os.path.join(conf.get("Defaults","LIB_DIR"),"snp_index_dbSNP_b146.db"),conf)
+		codes3d.build_snp_index(local_path,os.path.join(conf.get("Defaults","LIB_DIR"),"snp_index_dbSNP_b146.db"),conf,do_not_tidy_up=do_not_tidy_up)
 
-def download_hic_data(to_dl,conf,do_not_build_dbs):
+#Tested, working
+def download_hic_data(to_dl,conf,do_not_build_dbs, do_not_tidy_up):
 	cell_lines = {}
 	cell_lines["GM12878"] = ["GSM1551552","GSM1551553","GSM1551554","GSM1551555","GSM1551556","GSM1551557","GSM1551558","GSM1551559","GSM1551560","GSM1551561","GSM1551562","GSM1551563","GSM1551564","GSM1551565","GSM1551566","GSM1551567","GSM1551568","GSM1551569","GSM1551570","GSM1551571","GSM1551572","GSM1551573","GSM1551574"]
 	cell_lines["HeLa"] = ["GSM1551632","GSM1551633","GSM1551634","GSM1551635"]
@@ -75,19 +76,19 @@ def download_hic_data(to_dl,conf,do_not_build_dbs):
 		for dataset_file in datasets:
 			print "\tRetrieving " + dataset_file[0]
 			fileurl = "ftp://%s/%s/%s/suppl/%s" % (ftp_domain,ftp_dir,dataset_file[0],dataset_file[1])
-			subprocess.call(["wget",fileurl,"-P",local_path])
+			#subprocess.call(["wget",fileurl,"-P",local_path])
 
 	print "Processing files..."
 	for cell_line, datasets in filelist.items():
 		local_path = os.path.join(hic_dir,cell_line)
 		for dataset_file in datasets:
 			print "\tExtracting " + dataset_file[1]
-			subprocess.call(["gzip","-dk",os.path.join(local_path,dataset_file[1])])
+			subprocess.call(["gzip","-d",os.path.join(local_path,dataset_file[1])])
 			if not do_not_build_dbs:
-				codes3d.build_hic_index(os.path.join(local_path,dataset_file[1][:dataset_file[1].rfind('.gz')]))
+				codes3d.build_hic_index(os.path.join(local_path,dataset_file[1][:dataset_file[1].rfind('.gz')]),do_not_tidy_up=do_not_tidy_up)
 
 #Tested, working
-def download_gene_reference(conf,do_not_build_dbs):
+def download_gene_reference(conf,do_not_build_dbs,do_not_tidy_up):
 	local_path = local_path = conf.get("Defaults","LIB_DIR")
 
 	if not os.path.isdir(local_path):
@@ -100,13 +101,10 @@ def download_gene_reference(conf,do_not_build_dbs):
 	gene_fp = os.path.join(local_path,'gencode.v19.genes.v6p_model.patched_contigs.gtf')
 	subprocess.call(["gzip","-dk",gene_fp+".gz"])
 	if not do_not_build_dbs:
-		codes3d.build_gene_index([gene_fp],gene_fp + ".bed",gene_fp + ".db",conf)
-		print "Cleaning up..."
-		os.remove(gene_fp + ".gz")
-		os.remove(gene_fp)
+		codes3d.build_gene_index([gene_fp],gene_fp + ".bed",gene_fp + ".db",conf,do_not_tidy_up=do_not_tidy_up)
 
 #Tested, working
-def download_cis_eqtls(conf,do_not_build_dbs):
+def download_cis_eqtls(conf,do_not_build_dbs,do_not_tidy_up):
 	lib_dir = conf.get("Defaults","LIB_DIR")
 	eqtl_dir = conf.get("Defaults","EQTL_DATA_DIR")
 	if not os.path.isdir(eqtl_dir):
@@ -115,7 +113,7 @@ def download_cis_eqtls(conf,do_not_build_dbs):
 	eqtl_url = "http://www.gtexportal.org/static/datasets/gtex_analysis_v6/single_tissue_eqtl_data/GTEx_Analysis_V6_eQTLs.tar.gz"
 
 	print "Retrieving eQTL file..."
-	subprocess.call(["wget",eqtl_url,"-P",lib_dir])
+	#subprocess.call(["wget",eqtl_url,"-P",lib_dir])
 	print "Extracting GTEx_Analysis_V6_eQTLs.tar.gz..."
 	subprocess.call(["tar","-xzf",os.path.join(lib_dir,"GTEx_Analysis_V6_eQTLs.tar.gz"),"-C",eqtl_dir])
 	if not do_not_build_dbs:
@@ -123,12 +121,9 @@ def download_cis_eqtls(conf,do_not_build_dbs):
 		for snpgene in os.listdir(eqtl_dir):
 			if snpgene.endswith(".snpgene"):
 				print "\tBuilding %s.db..." % snpgene[:snpgene.rfind('.')];
-				codes3d.build_eqtl_index(os.path.join(eqtl_dir,snpgene));
-				print "Cleaning up..."
-				for snpgene in os.listdir(eqtl_dir):
-					if snpgene.endswith(".snpgene"):
-						os.remove(os.path.join(eqtl_dir,snpgene))
-				os.remove(os.path.join(lib_dir,"GTEx_Analysis_V6_eQTLs.tar.gz"))
+				codes3d.build_eqtl_index(os.path.join(eqtl_dir,snpgene),do_not_tidy_up=do_not_tidy_up);
+				if not do_not_tidy_up:
+					os.remove(os.path.join(lib_dir,"GTEx_Analysis_V6_eQTLs.tar.gz"))
 
 # Tested, working
 def download_human_genome(conf,do_not_build_dbs):
@@ -153,7 +148,7 @@ def download_human_genome(conf,do_not_build_dbs):
 	for file in file_list:
 		print "Retrieving " + file
 		chr_url = "ftp://%s/%s/%s" % (ensembl_domain,ftp_dir,file)
-		subprocess.call(["wget",chr_url,"-P",local_path])
+		#subprocess.call(["wget",chr_url,"-P",local_path])
 
 	print "Decompressing and concatenating files (please be patient, this may take some time)..."
 	subprocess.call("zcat %s/*.gz > %s/Homo_sapiens.GRCh37.75.dna.fa" % local_path,shell=True)
@@ -167,24 +162,32 @@ if __name__ == "__main__":
 	parser.add_argument("-s","--snps",action="store_true",default=False,help="Download dbSNP data (build 146).")
 	parser.add_argument("-i","--hic",nargs='*',help="Download Hi-C data. If no arguments are given, this will download Hi-C datasets for cell-lines\
 		GM12878, HeLa, HMEC, HUVEC, IMR90, K562, KBM7, and NHEK. Additionally, any of these can be passed as an argument in a space-separated list, e.g.\
-		`-i GM12878 NHEK`. NOTE: THIS COMMAND HUNDREDS OF GIGABYTES OF DATA, AND MAY RUN FOR A LONG TIME. Consider downloading individual cell lines.")
+		`-i GM12878 NHEK`. NOTE: THIS COMMAND DOWNLOADS HUNDREDS OF GIGABYTES OF DATA, AND MAY RUN FOR A LONG TIME. Consider downloading individual cell lines.")
 	parser.add_argument("-g","--gene",action="store_true",default=False,help="Download GENCODE gene reference from GTEx portal.")
 	parser.add_argument("-e","--cis_eqtls",action="store_true",default=False,help="Download cis-eQTLs found in GTEx analysis v6.")
 	parser.add_argument("-p","--hg19",action="store_true",default=False,help="Download GRCh37.p13 (hg19) build of the human genome.")
-	parser.add_argument("-x","--expression_data",action="store_true",default=False)
+	parser.add_argument("-a","--all",action="store_true",default=False,help="Download all default data files. NOTE: ALL DATA FILES TOTAL HUNDREDS OF GIGABYTES. It may be safest to \
+		download default datasets individually in case of failure.")
 	parser.add_argument("-c","--config_file",default=os.path.join(os.path.dirname(__file__),"../docs/codes3d.conf"),help="The configuration file to use to resolve library directories.")
 	parser.add_argument("-b","--do_not_build_dbs",action="store_true",default=False,help="Do not build associated databases/indices for downloaded data (default: False).")
+	parser.add_argument("-t","--do_not_tidy_up",action="store_true",default=False,help="Do not remove intermediate files after building databases (default: False).")
 	args = parser.parse_args()
 	config = configparser.ConfigParser()
 	config.read(args.config_file)
 
+	if args.all:
+		args.snps = True
+		args.hic = True
+		args.gene = True
+		args.cis_eqtls = True
+		args.hg19 = True
 	if args.snps:
-		download_snp_data(config,args.do_not_build_dbs)
+		download_snp_data(config,args.do_not_build_dbs,args.do_not_tidy_up)
 	if args.hic:
-		download_hic_data(args.hic,config,args.do_not_build_dbs)
+		download_hic_data(args.hic,config,args.do_not_build_dbs,args.do_not_tidy_up)
 	if args.gene:
-		download_gene_reference(config,args.do_not_build_dbs)
+		download_gene_reference(config,args.do_not_build_dbs,args.do_not_tidy_up)
 	if args.cis_eqtls:
-		download_cis_eqtls(config,args.do_not_build_dbs)
+		download_cis_eqtls(config,args.do_not_build_dbs,args.do_not_tidy_up)
 	if args.hg19:
-		download_human_genome(config,args.do_not_build_dbs)
+		download_human_genome(config,args.do_not_build_dbs,args.do_not_tidy_up)
