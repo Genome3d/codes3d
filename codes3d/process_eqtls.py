@@ -1,5 +1,6 @@
-from configobj import ConfigObj
-import argparse,codes3d,os
+#!/usr/bin/env python
+
+import argparse,codes3d,configparser,os
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="")
@@ -9,8 +10,9 @@ if __name__ == "__main__":
 	parser.add_argument("-o","--output_dir",default="codes3d_output",help="The directory in which to output results (\"codes3d_output\" by default).")
 	parser.add_argument("-c","--config",default="docs/conf.py",help="The configuration file to be used in this instance (default: conf.py)")
 	args = parser.parse_args()
-	config = ConfigObj(args.config)
-	gene_database_fp = config["GENE_DATABASE_FP"]
+	config = configparser.ConfigParser()
+	config.read(args.config)
+	gene_database_fp = config.get("Defaults","GENE_DATABASE_FP")
 	if not os.path.isdir(args.output_dir):
 		os.makedirs(args.output_dir)
 	

@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
-from configobj import ConfigObj
-import argparse,codes3d,os
+import argparse,codes3d,configparser,os
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="")
@@ -10,8 +9,9 @@ if __name__ == "__main__":
 	parser.add_argument("-c","--config",default="docs/conf.py",help="The configuration file to be used in this instance (default: conf.py)")
 	parser.add_argument("-f","--fdr_threshold",type=float,default=0.05,help="The FDR threshold to consider an eQTL statistically significant (default: 0.05).")
 	args = parser.parse_args()
-	config = ConfigObj(args.config)
-	expression_table_fp = config["EXPRESSION_TABLE_FP"]
+	config = configparser.ConfigParser()
+	config.read(args.config)
+	expression_table_fp = config.get("Defaults","EXPRESSION_TABLE_FP")
 	eqtls,num_sig = codes3d.parse_eqtls_files(args.eqtls_files,args.fdr_threshold)
 	if not os.path.isdir(args.output_dir):
 		os.makedirs(args.output_dir)

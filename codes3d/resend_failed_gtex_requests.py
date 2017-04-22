@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
-from configobj import ConfigObj
-import argparse,ast,codes3d,os
+import argparse,ast,codes3d,configparser,os
 
 def parse_failed_requests(requests_fp):
 	reqLists = []
@@ -100,8 +99,9 @@ if __name__ == "__main__":
 	parser.add_argument("-c","--config",default="docs/conf.py",help="The configuration file to be used in this instance (default: conf.py)")
 	parser.add_argument("-p","--num_processes",type=int,default=1,help="Desired number of processes for multiprocessing (default: 1).")
 	args = parser.parse_args()
-	config = ConfigObj(args.config)
-	gene_database_fp = config["GENE_DATABASE_FP"]
+	config = configparser.ConfigParser()
+	config.read(args.config)
+	gene_database_fp = config.get("Defaults","GENE_DATABASE_FP")
 	reqLists = parse_failed_requests(args.input_dir + "/failed_GTEx_requests.txt")
 	snps = codes3d.parse_snps_files(args.input_dir + "/snps.txt")
 	genes = codes3d.parse_genes_files(args.input_dir + "/genes.txt")

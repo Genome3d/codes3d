@@ -3,7 +3,7 @@
 from itertools import cycle
 from sets import Set
 from wikipathways_api_client import WikipathwaysApiClient
-import argparse,ast,bisect,configparser,csv,json,multiprocessing,os,pandas,pybedtools,re,requests,sqlite3,time
+import argparse,ast,bisect,configparser,csv,json,multiprocessing,os,pandas,pybedtools,re,requests,shutil,sqlite3,time
 
 from Bio import SeqIO
 from Bio import Restriction
@@ -694,7 +694,7 @@ def build_snp_index(snp_dir,output_fp,config,id_col=4,chr_col=1,locus_col=2,do_n
 	if not os.path.isdir(os.path.dirname(output_fp)):
 		os.makedirs(os.path.dirname(output_fp))
 
-	snp_index_db = sqlite3.connect(output_fp)
+	"""snp_index_db = sqlite3.connect(output_fp)
 	snp_index = snp_index_db.cursor()
 	snp_index.execute("CREATE TABLE IF NOT EXISTS snps (rsID text unique, chr text, locus integer)")
 	snp_index.execute("CREATE INDEX IF NOT EXISTS id ON snps (rsID,chr,locus)")
@@ -731,7 +731,7 @@ def build_snp_index(snp_dir,output_fp,config,id_col=4,chr_col=1,locus_col=2,do_n
 					res = ""
 		bed.close()
 	print "\tWriting SNP index to file..."
-	snp_index_db.commit()
+	snp_index_db.commit()"""
 	print "Done building SNP index."
 	if not do_not_tidy_up:
 		print "Tidying up..."

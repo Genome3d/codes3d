@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
-from configobj import ConfigObj
-import argparse,codes3d,os
+import argparse,codes3d,configparser,os
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="")
@@ -11,8 +10,9 @@ if __name__ == "__main__":
 	parser.add_argument("-x","--exclude_cell_lines",nargs='+',help="Space-separated list of cell lines to exclude (others will be included). NOTE: Mutually exclusive with INCLUDE_CELL_LINES.")
 	parser.add_argument("-o","--output_dir",default="hiCquery_output",help="The directory in which to output results (\"hiCquery_output\" by default).")
 	args = parser.parse_args()
-	config = ConfigObj(args.config)
-	hic_data_dir = config["HIC_DATA_DIR"]
+	config = configparser.ConfigParser()
+	config.read(args.config)
+	hic_data_dir = config.get("Defaults","HIC_DATA_DIR")
 	if not os.path.isdir(args.output_dir):
 		os.makedirs(args.output_dir)
 
