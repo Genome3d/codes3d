@@ -308,12 +308,12 @@ def send_GTEx_query(num,num_reqLists,reqList,gtexResponses):
 	try:
 		while True:
 			print "\t\tSending request %s of %s" % (num,num_reqLists)
-			res = requests.post("http://gtexportal.org/api/v6p/dyneqtl?v=clversion", json=reqList)
+			res = requests.post("http://gtexportal.org/rest/v1/association/dyneqtl?v=clversion", json=reqList)
 			if res.status_code == 200:
 				gtexResponses.append((reqList,res))
 				time.sleep(30)
 				return
-			elif res.status_code == 500:
+			elif res.status_code == 500 or res.status_code == 400:
 				print "\t\tThere was an error processing request %s. Writing to failed request log and continuing." % num
 				gtexResponses.append((reqList,"Processing error"))
 				time.sleep(30)
