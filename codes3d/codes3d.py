@@ -609,6 +609,7 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 	p_values = [] #A sorted list of all p-values for use computing FDR
 	num_tests = 0 #Total number of tests done
 	num_sig = {} #Number of eQTLs deemed significant under the given threshold
+	eqtls_files = eqtls_files.split(' ') #@Tayaza: Separate individual eqtl files
 	for eqtls_file in eqtls_files:
 		lines = 0
 		with open(eqtls_file,'r') as eqtlfile:	
@@ -633,10 +634,10 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 				except ValueError:
 					gene_start = eqtl[5]
 					gene_end = eqtl[6]
-					try:
-						cell_lines = ast.literal_eval(eqtl[7])
-					except ValueError:
-						cell_lines = eqtl[7]
+				try:
+					cell_lines = ast.literal_eval(eqtl[7])
+				except ValueError:
+					cell_lines = eqtl[7]
 				cis = ast.literal_eval(eqtl[8])
 				try:
 					p_thresh = float(eqtl[9])
@@ -644,8 +645,12 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 					p_thresh = eqtl[9]
 				tissue = eqtl[10]
 				p = float(eqtl[11])
-				q = float(eqtl[12])
-				effect_size = float(eqtl[13])
+				try:
+					q = float(eqtl[12])
+					effect_size = float(eqtl[13])
+				except IndexError:
+					q = 0.0 #@Tayaza: Handle previous versions without qvalue 
+					effect_size = 0.0 #@Tayaza: Handle previous versions 
 				if not eqtls.has_key(snp):
 					eqtls[snp] = {}
 					num_sig[snp] = 0
@@ -659,12 +664,14 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 					eqtls[snp][gene]["p_thresh"] = p_thresh
 					eqtls[snp][gene]["tissues"] = {}
 					eqtls[snp][gene]["cis?"] = cis
-					eqtls[snp][gene]["tissues"][tissue] = {"pvalue": p, "effect_size": effect_size}
+
+				eqtls[snp][gene]["tissues"][tissue] = {"pvalue": p, "effect_size": effect_size} #@Tayaza: To capture all eQTL tissues and not just the first one
 				if fdr_threshold:
 					bisect.insort(p_values,p)
 					num_tests += 1
 				else:
 					eqtls[snp][gene]["tissues"][tissue]["qvalue"] = q
+
 	for snp in eqtls.keys():
 		for gene in eqtls[snp].keys():
 			if not gene == "snp_info":
@@ -673,6 +680,7 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 						eqtls[snp][gene]["tissues"][tissue]["qvalue"] = compute_fdr(eqtls[snp][gene]["tissues"][tissue]["pvalue"],p_values,num_tests)
 						if eqtls[snp][gene]["tissues"][tissue]["qvalue"] < fdr_threshold:
 							num_sig[snp] += 1
+
 	return (eqtls,num_sig)
 
 def build_snp_index(snp_dir,output_fp,config,id_col=4,chr_col=1,locus_col=2,do_not_tidy_up=False):
@@ -870,19 +878,24 @@ def build_fragment_index(fragment_fp,output_db):
 
 def build_gene_index(gene_files,output_bed,output_db,config,symbol_col=27,chr_col=29,start_col=30,end_col=31,p_thresh_col=None,no_header=False,do_not_tidy_up=False):
 	genes = {}
-
-	symbol_col -= 1
-	chr_col -= 1
-	start_col -= 1
-	end_col -= 1
+	
+	#Edited to cater for when only the .gtf and .conf arguments are provided.
+	if symbol_col:
+		symbol_col -= 1
+	if chr_col:
+		chr_col -= 1
+	if start_col:
+		start_col -= 1
+	if end_col:
+		end_col -= 1
 	if p_thresh_col:
 		p_thresh_col -= 1
-
+	
 	if not output_bed:
 		output_bed = os.path.join(config.get("Defaults","LIB_DIR"),"gene_reference.bed")
 
-	if not output_db:
-		output_bed = os.path.join(config.get("Defaults","LIB_DIR"),"gene_reference.db")
+	if not output_db: #corrected output_bed to output_db
+		output_db = os.path.join(config.get("Defaults","LIB_DIR"),"gene_reference.db")
 
 	append_bed = False
 	overwrite_bed = True
@@ -898,6 +911,7 @@ def build_gene_index(gene_files,output_bed,output_db,config,symbol_col=27,chr_co
 		os.makedirs(os.path.dirname(output_bed))
 
 	upsert_db = True
+
 	if os.path.isfile(output_db):
 		upsert = raw_input("WARNING: Upserting input to existing gene database (%s). Continue? [y/N] " % output_db)
 		if not upsert.lower() == 'y':
