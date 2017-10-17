@@ -4,6 +4,7 @@ from itertools import cycle
 from sets import Set
 from wikipathways_api_client import WikipathwaysApiClient
 import argparse,ast,bisect,configparser,csv,json,multiprocessing,os,pandas,pybedtools,re,requests,shutil,sqlite3,time
+from operator import itemgetter
 
 from Bio import SeqIO
 from Bio import Restriction
@@ -166,11 +167,12 @@ def find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,fdr_threshold,local_dat
 	p_values = [] #A sorted list of all p-values for use computing FDR
 	num_sig = {} #Number of eQTLs deemed significant under the given threshold
 	num_tests = 0 #Total number of tests done
-        num_tests += query_local_databases(eqtl_data_dir,genes,eqtls,p_values)
+        #num_tests += query_local_databases(eqtl_data_dir,genes,eqtls,p_values) #Suspend local database query until it is updated
 	if not local_databases_only:
 		num_tests += query_GTEx_service(snps,genes,eqtls,p_values,num_processes,output_dir)
 	process_eqtls(snps,genes,eqtls,gene_database_fp)
 	eqtlfile = None
+	p_values,adj_p_values = compute_adj_pvalues(p_values)
 	if not suppress_intermediate_files:
 		eqtlfile = open(output_dir + '/eqtls.txt','w')
 	for snp in eqtls.keys():
@@ -178,7 +180,8 @@ def find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,fdr_threshold,local_dat
 		for gene in eqtls[snp].keys():
 			if not gene == "snp_info":
 				for tissue in eqtls[snp][gene]["tissues"].keys():
-					eqtls[snp][gene]["tissues"][tissue]["qvalue"] = compute_fdr(eqtls[snp][gene]["tissues"][tissue]["pvalue"],p_values,num_tests)
+					eqtls[snp][gene]["tissues"][tissue]["qvalue"] = adj_p_values[p_values.index(eqtls[snp][gene]["tissues"][tissue]["pvalue"])]
+					#eqtls[snp][gene]["tissues"][tissue]["qvalue"] = compute_fdr(eqtls[snp][gene]["tissues"][tissue]["pvalue"],p_values,num_tests)
 					if eqtls[snp][gene]["tissues"][tissue]["qvalue"] < fdr_threshold:
 						num_sig[snp] += 1
 					if not suppress_intermediate_files:
@@ -207,7 +210,53 @@ def query_local_databases(eqtl_data_dir,genes,eqtls,p_values):
 	return num_tests
 
 def query_GTEx_service(snps,genes,eqtls,p_values,num_processes,output_dir):
-	tissues = Set(["Adipose_Subcutaneous","Adipose_Visceral_Omentum","Adrenal_Gland","Artery_Aorta","Artery_Coronary","Artery_Tibial","Brain_Amygdala","Brain_Anterior_cingulate_cortex_BA24","Brain_Caudate_basal_ganglia","Brain_Cerebellar_Hemisphere","Brain_Cerebellum","Brain_Cortex","Brain_Frontal_Cortex_BA9","Brain_Hippocampus","Brain_Hypothalamus","Brain_Nucleus_accumbens_basal_ganglia","Brain_Putamen_basal_ganglia","Brain_Spinal_cord_cervical_c-1","Brain_Substantia_nigra","Breast_Mammary_Tissue","Cells_EBV-transformed_lymphocytes","Cells_Transformed_fibroblasts","Colon_Sigmoid","Esophagus_Gastroesophageal_Junction","Esophagus_Mucosa","Esophagus_Muscularis","Heart_Atrial_Appendage","Heart_Left_Ventricle","Liver","Lung","Minor_Salivary_Gland","Muscle_Skeletal","Nerve_Tibial","Ovary","Pancreas","Pituitary","Prostate","Skin_Not_Sun_Exposed_Suprapubic","Skin_Sun_Exposed_Lower_leg","Small_Intestine_Terminal_Ileum","Spleen","Stomach","Testis","Thyroid","Uterus","Vagina","Whole_Blood"])
+	tissues = Set(["Adipose_Subcutaneous",
+		       "Adipose_Visceral_Omentum",
+		       "Adrenal_Gland",
+		       "Artery_Aorta",
+		       "Artery_Coronary",
+		       "Artery_Tibial",
+		       "Brain_Amygdala",
+		       "Brain_Anterior_cingulate_cortex_BA24",
+		       "Brain_Caudate_basal_ganglia",
+		       "Brain_Cerebellar_Hemisphere",
+		       "Brain_Cerebellum",
+		       "Brain_Cortex",
+		       "Brain_Frontal_Cortex_BA9",
+		       "Brain_Hippocampus",
+		       "Brain_Hypothalamus",
+		       "Brain_Nucleus_accumbens_basal_ganglia",
+		       "Brain_Putamen_basal_ganglia",
+		       "Brain_Spinal_cord_cervical_c-1",
+		       "Brain_Substantia_nigra",
+		       "Breast_Mammary_Tissue",
+		       "Cells_EBV-transformed_lymphocytes",
+		       "Cells_Transformed_fibroblasts",
+		       "Colon_Sigmoid",
+		       "Esophagus_Gastroesophageal_Junction",
+		       "Esophagus_Mucosa",
+		       "Esophagus_Muscularis",
+		       "Heart_Atrial_Appendage",
+		       "Heart_Left_Ventricle",
+		       "Liver",
+		       "Lung",
+		       "Minor_Salivary_Gland",
+		       "Muscle_Skeletal",
+		       "Nerve_Tibial",
+		       "Ovary",
+		       "Pancreas",
+		       "Pituitary",
+		       "Prostate",
+		       "Skin_Not_Sun_Exposed_Suprapubic",
+		       "Skin_Sun_Exposed_Lower_leg",
+		       "Small_Intestine_Terminal_Ileum",
+		       "Spleen",
+		       "Stomach",
+		       "Testis",
+		       "Thyroid",
+		       "Uterus",
+		       "Vagina",
+		       "Whole_Blood"])
 	if num_processes > 10:
 		num_processes = 10
 	manager = multiprocessing.Manager()
@@ -218,7 +267,11 @@ def query_GTEx_service(snps,genes,eqtls,p_values,num_processes,output_dir):
 			for tissue in tissues:
 				#We aren't interested in eQTLs already discovered from local databases
 				if (not eqtls.has_key(snp) or (eqtls.has_key(snp) and not eqtls[snp].has_key(gene))) or (eqtls[snp].has_key(gene) and not eqtls[snp][gene]["tissues"].has_key(tissue)):
-					if len(reqLists[-1]) < 1000:
+					#if len(reqLists[-1]) < 1000:
+					#Make each request set contain tissues from only one SNP-gene pair
+					if not reqLists[-1]:
+						reqLists[-1].append({"snpId":snp,"gencodeId":gene,"tissueName":tissue})
+					elif reqLists[-1][-1]["snpId"]==snp and reqLists[-1][-1]["gencodeId"]==gene:
 						reqLists[-1].append({"snpId":snp,"gencodeId":gene,"tissueName":tissue})
 					else:
 						reqLists.append([{"snpId":snp,"gencodeId":gene,"tissueName":tissue}])
@@ -289,7 +342,8 @@ def process_eqtls(snps,genes,eqtls,gene_database_fp):
 							else:
 								p_thresh = "NA"
 							max_length = gene_stat[2] - gene_stat[1]
-					cis = gene_chr == eqtls[snp]["snp_info"]["chr"] and (eqtls[snp]["snp_info"]["locus"] > gene_start - 1000000 and eqtls[snp]["snp_info"]["locus"] < gene_end + 1000000) #eQTL is cis if the SNP is within 1Mbp of the gene
+					cis = gene_chr == eqtls[snp]["snp_info"]["chr"] and (eqtls[snp]["snp_info"]["locus"] > gene_start - 1000000 \
+												     and eqtls[snp]["snp_info"]["locus"] < gene_end + 1000000) #eQTL is cis if the SNP is within 1Mbp of the gene
 					
 					eqtls[snp][gene]["gene_chr"] = gene_chr
 					eqtls[snp][gene]["gene_start"] = gene_start
@@ -305,29 +359,32 @@ def process_eqtls(snps,genes,eqtls,gene_database_fp):
 						eqtls[snp][gene]["cis?"] = False
 
 def send_GTEx_query(num,num_reqLists,reqList,gtexResponses):
+	s = requests.Session()
+	s.verify = gtex_cert
 	try:
 		while True:
 			print "\t\tSending request %s of %s" % (num,num_reqLists)
-			res = requests.post("http://gtexportal.org/rest/v1/association/dyneqtl?v=clversion", json=reqList)
+			gtex_url = "https://gtexportal.org/rest/v1/association/dyneqtl?v=clversion"
+			res = s.post(gtex_url, json=reqList)
 			if res.status_code == 200:
 				gtexResponses.append((reqList,res))
-				time.sleep(30)
+				time.sleep(1)
 				return
 			elif res.status_code == 500 or res.status_code == 400:
 				print "\t\tThere was an error processing request %s. Writing to failed request log and continuing." % num
 				gtexResponses.append((reqList,"Processing error"))
-				time.sleep(30)
+				time.sleep(2)
 				return
 			else:
 			    print "\t\tRequest %s received response with status %s. Trying again in five minutes." % (num,res.status_code)
-			    time.sleep(300)
+			    time.sleep(10)
 	except requests.exceptions.ConnectionError:
 		try:
 			print "\t\tWarning: Request %s experienced a connection error. Retrying in five minutes." % num
 			time.sleep(300)
 			while True:
 				print "\t\tSending request %s of %s" % (num,num_reqLists)
-				res = requests.post("http://gtexportal.org/api/v6p/dyneqtl?v=clversion", json=reqList)
+				res = s.post("http://gtexportal.org/api/v6p/dyneqtl?v=clversion", json=reqList)
 				if res.status_code == 200:
 					gtexResponses.append((reqList,res))
 					time.sleep(30)
@@ -345,6 +402,7 @@ def send_GTEx_query(num,num_reqLists,reqList,gtexResponses):
 			gtexResponses.append((reqList,"Connection failure"))
 			time.sleep(300)
 			return
+	s.close()
 
 def get_gene_expression_information(eqtls,expression_table_fp,output_dir):
 	print "Getting gene expression information..."
@@ -360,8 +418,8 @@ def get_gene_expression_information(eqtls,expression_table_fp,output_dir):
 	gene_exp.to_csv(path_or_buf=output_dir+"/gene_expression_table.txt",sep='\t')
 
 def compute_fdr(p,p_values,num_tests):
-	positives = bisect.bisect_right(p_values, p)
-	return float(num_tests) * p / float(positives)
+	k = bisect.bisect_right(p_values, p)
+	return(k / float(num_tests) * args.fdr_threshold)
 
 def produce_summary(eqtls,expression_table_fp,output_dir):
 	#TODO: Tidy up this method using pandas
@@ -369,9 +427,20 @@ def produce_summary(eqtls,expression_table_fp,output_dir):
 	if not os.path.isdir(output_dir):
 		os.mkdir(output_dir)
 	summary = open(output_dir + "/summary.txt",'w')
-	summary.write("SNP\tSNP_Chromosome\tSNP_Locus\tGene_Name\tGene_Chromosome\tGene_Start\tGene_End\tTissue\tp-value\tq-value\tEffect_Size\tCell_Lines\tGTEx_cis_p_Threshold\tcis_SNP-gene_interaction\tSNP-gene_Distance\tExpression_Level_In_eQTL_Tissue\tMax_Expressed_Tissue\tMaximum_Expression_Level\tMin_Expressed_Tissue\tMin_Expression_Level\n")
+	summ_writer = csv.writer(summary, delimiter='\t')
+	summ_header = ['SNP', 'SNP_Chromosome', 'SNP_Locus',
+		       'Gene_Name', 'Gene_Chromosome',
+		       'Gene_Start', 'Gene_End', 'Tissue',
+		       'p-value', 'Adj_p-value', 'Effect_Size',
+		       'Cell_Lines', 'GTEx_cis_p_Threshold', 
+		       'cis_SNP-gene_interaction', 'SNP-gene_Distance', 
+		       'Expression_Level_In_eQTL_Tissue', 'Max_Expressed_Tissue', 
+		       'Maximum_Expression_Level', 'Min_Expressed_Tissue', 
+		       'Min_Expression_Level']
+	summ_writer.writerow(summ_header)
 	gene_df = pandas.read_table(expression_table_fp,index_col="Description")
 	gene_exp = {} #Cache of already-accessed gene expression data
+	all_summary_rows = [] #To produce significant eQTL interactions
 	for snp in eqtls.keys():
 		for gene in eqtls[snp].keys():
 			if not gene == "snp_info":
@@ -384,7 +453,7 @@ def produce_summary(eqtls,expression_table_fp,output_dir):
 					distance_from_snp = eqtls[snp][gene]["gene_start"] - eqtls[snp]["snp_info"]["locus"]
 				elif(eqtls[snp]["snp_info"]["locus"] > eqtls[snp][gene]["gene_end"]):
 					distance_from_snp = eqtls[snp]["snp_info"]["locus"] - eqtls[snp][gene]["gene_end"]
-
+					
 				for tissue in eqtls[snp][gene]["tissues"].keys():
 					if not gene_exp.has_key(gene):
 						gene_exp[gene] = {}
@@ -409,28 +478,77 @@ def produce_summary(eqtls,expression_table_fp,output_dir):
 						except KeyError:
 							print "\t\tWarning: No expression information for %s in %s" % (gene,tissue)
 							gene_exp[gene][tissue] = "NA"
-
-					summary.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t" % (snp,eqtls[snp]["snp_info"]["chr"],eqtls[snp]["snp_info"]["locus"],gene,eqtls[snp][gene]["gene_chr"],eqtls[snp][gene]["gene_start"],eqtls[snp][gene]["gene_end"],tissue,eqtls[snp][gene]["tissues"][tissue]["pvalue"],eqtls[snp][gene]["tissues"][tissue]["qvalue"],eqtls[snp][gene]["tissues"][tissue]["effect_size"]))
+					
+					to_cell_line = ''
 					if eqtls[snp][gene]["cell_lines"] == "NA":
-						summary.write("NA")
+						to_cell_line = "NA"
 					else:
 						for i,cell_line in enumerate(eqtls[snp][gene]["cell_lines"],start=1):
 							if not i == len(eqtls[snp][gene]["cell_lines"]):
-								summary.write("%s," % cell_line)
+								to_cell_line = cell_line
 							else:
-								summary.write(cell_line)
-					summary.write("\t%s\t%s\t%s\t%s\t%s\t" % (eqtls[snp][gene]["p_thresh"],eqtls[snp][gene]["cis?"],distance_from_snp,gene_exp[gene][tissue],gene_exp[gene]["max"]))
+								to_cell_line = cell_line
+					max_gene_exp = ''
 					if gene_exp[gene]["max"] == "NA":
-						summary.write("NA\t")
+						max_gene_exp = 'NA'
 					else:
-						summary.write("%s\t" % gene_exp[gene][gene_exp[gene]["max"]])
-					summary.write("%s\t" % gene_exp[gene]["min"])
+						max_gene_exp = gene_exp[gene][gene_exp[gene]["max"]]
+						min_gene_exp = ''
 					if gene_exp[gene]["min"] == "NA":
-						summary.write("NA\n")
+						min_gene_exp = 'NA'
 					else:
-						summary.write("%s\n" % gene_exp[gene][gene_exp[gene]["min"]])
+						min_gene_exp = gene_exp[gene][gene_exp[gene]["min"]]
+						
+					to_summary = [snp,eqtls[snp]["snp_info"]["chr"],
+							      eqtls[snp]["snp_info"]["locus"],
+							      gene,eqtls[snp][gene]["gene_chr"],
+							      eqtls[snp][gene]["gene_start"],
+							      eqtls[snp][gene]["gene_end"],tissue,
+							      eqtls[snp][gene]["tissues"][tissue]["pvalue"],
+							      eqtls[snp][gene]["tissues"][tissue]["qvalue"],
+							      eqtls[snp][gene]["tissues"][tissue]["effect_size"],
+							      to_cell_line, eqtls[snp][gene]["p_thresh"],
+							      eqtls[snp][gene]["cis?"],distance_from_snp,
+							      gene_exp[gene][tissue],gene_exp[gene]["max"],
+							      max_gene_exp, gene_exp[gene]["min"],
+							      min_gene_exp]
+					all_summary_rows.append(to_summary)
+	summ_writer.writerows(all_summary_rows)
 	summary.close()
+	produce_sig_eqtls(all_summary_rows, summ_header, output_dir)
 
+def compute_adj_pvalues(p_values):
+	p_values = sorted(p_values)
+	min_function = []
+	adj_pvalues = []
+	for k, pval in enumerate(p_values,start=1):
+		mfunc = (len(p_values) / float(k)) * pval
+		if mfunc > 1:
+			mfunc = 1
+		min_function.append(mfunc)
+	for i in range(len(min_function)):
+		adj_pval = min(min_function[i:len(min_function)])
+		adj_pvalues.append(adj_pval)
+	return(p_values,adj_pvalues)
+
+def produce_sig_eqtls(all_summary_rows, summ_header,output_dir):
+	fdr = 0.05
+	try:
+		fdr = args.fdr_threshold
+	except:
+		fdr = 0.05
+	sig_eqtls = []
+	all_summary = sorted(all_summary_rows, key = itemgetter(9))
+	for row in all_summary_rows:
+		if row[9] <= fdr:
+			sig_eqtls.append(row)
+
+	sig_file = open(os.path.join(output_dir,'significant_eqtls.txt'),'w')
+	sigwriter = csv.writer(sig_file, delimiter = '\t')
+	sigwriter.writerow(summ_header)
+	sigwriter.writerows(sig_eqtls)
+	sig_file.close()
+			
 def produce_overview(genes,eqtls,num_sig,output_dir):
 	print "Producing overview..."
 	stat_table = open(output_dir + "/overview.txt",'w')
@@ -603,13 +721,13 @@ def parse_genes_files(genes_files):
 				genes[snp][gene[1]].add(gene[2])
 	return genes
 
-def parse_eqtls_files(eqtls_files,fdr_threshold=None):
+def parse_eqtls_files(eqtls_files,fdr_threshold=0.05):
 	print "Parsing eQTLs..."
 	eqtls = {}
 	p_values = [] #A sorted list of all p-values for use computing FDR
 	num_tests = 0 #Total number of tests done
 	num_sig = {} #Number of eQTLs deemed significant under the given threshold
-	eqtls_files = eqtls_files.split(' ') #@Tayaza: Separate individual eqtl files
+	#eqtls_files = eqtls_files.split(' ') #@Tayaza: Separate individual eqtl files
 	for eqtls_file in eqtls_files:
 		lines = 0
 		with open(eqtls_file,'r') as eqtlfile:	
@@ -649,7 +767,7 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 					q = float(eqtl[12])
 					effect_size = float(eqtl[13])
 				except IndexError:
-					q = 0.0 #@Tayaza: Handle previous versions without qvalue 
+					q = 2.0 #@Tayaza: Handle previous versions without qvalue 
 					effect_size = 0.0 #@Tayaza: Handle previous versions 
 				if not eqtls.has_key(snp):
 					eqtls[snp] = {}
@@ -672,12 +790,14 @@ def parse_eqtls_files(eqtls_files,fdr_threshold=None):
 				else:
 					eqtls[snp][gene]["tissues"][tissue]["qvalue"] = q
 
+	p_values,adj_p_values = compute_adj_pvalues(p_values)
 	for snp in eqtls.keys():
 		for gene in eqtls[snp].keys():
 			if not gene == "snp_info":
 				for tissue in eqtls[snp][gene]["tissues"].keys():
 					if fdr_threshold:
-						eqtls[snp][gene]["tissues"][tissue]["qvalue"] = compute_fdr(eqtls[snp][gene]["tissues"][tissue]["pvalue"],p_values,num_tests)
+						eqtls[snp][gene]["tissues"][tissue]["qvalue"] = adj_p_values[p_values.index(eqtls[snp][gene]["tissues"][tissue]["pvalue"])]
+						#eqtls[snp][gene]["tissues"][tissue]["qvalue"] = compute_fdr(eqtls[snp][gene]["tissues"][tissue]["pvalue"],p_values,num_tests)
 						if eqtls[snp][gene]["tissues"][tissue]["qvalue"] < fdr_threshold:
 							num_sig[snp] += 1
 
@@ -1103,6 +1223,7 @@ if __name__ == "__main__":
 	gene_database_fp = config.get("Defaults","GENE_DATABASE_FP")
 	eqtl_data_dir = config.get("Defaults","EQTL_DATA_DIR")
 	expression_table_fp = config.get("Defaults","EXPRESSION_TABLE_FP")
+	gtex_cert = config.get("Defaults", "GTEX_CERT")
 	if not os.path.isdir(args.output_dir):
 		os.makedirs(args.output_dir)
 	
