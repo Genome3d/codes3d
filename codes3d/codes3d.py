@@ -12,7 +12,7 @@ import json
 import multiprocessing
 import os
 import pandas
-#import pybedtools
+import pybedtools
 import re
 import requests
 import shutil
@@ -168,20 +168,17 @@ def find_interactions(
             3. Fragment chromosome 
             4. Fragment ID
     """
-
-    
     print("Finding interactions...")
     # Look for all interactions involving SNP fragments in the HiC databases
     if include:
-        include_set = Set(include)
+        include_set = set(include)
     if exclude:
-        exclude_set = Set(exclude)
+        exclude_set = set(exclude)
     # A mapping of each SNP to the fragments with which the fragment it is on
     # interacts
     interactions = {}
     for snp in snps.keys():
         interactions[snp] = {}
-
     for cell_line in os.listdir(hic_data_dir):
         if (include and cell_line not in include) or (
                 exclude and cell_line in exclude):
@@ -209,7 +206,6 @@ def find_interactions(
                                 snps[snp]["chr"],
                                 snps[snp]["frag"]]):
                             interactions[snp][cell_line].add(interaction)
-
     if not suppress_intermediate_files:
         intfile = open(output_dir + "/snp-gene_interactions.txt", 'w')
         iwriter = csv.writer(intfile, delimiter='\t')
@@ -218,7 +214,6 @@ def find_interactions(
                 for interaction in interactions[snp][cell_line]:
                     iwriter.writerow(
                         (snp, cell_line, interaction[0], interaction[1]))
-
         intfile.close()
 
     return interactions
@@ -230,6 +225,38 @@ def find_genes(
         gene_bed_fp,
         output_dir,
         suppress_intermediate_files=False):
+    """Identifies genes in fragments that interact with SNP fragments.
+
+    Args:
+        interactions: The dictionary fragements that interact with  SNP fragments 
+            returned from find_interactions
+        fragment_database_fp: ../../lib/Homo_sapiens.GRCh37.75.dna.fragments.db
+        gene_bed_fp: ../../lib/gene_reference.bed
+        output_dir: User-specified directory for results. Defaults to inputs directory.
+        suppress_intermediate_files: if 'False', snps.txt file is written to output_dir
+
+    Returns:
+        A dict named 'genes' containing genes  in fragments that interact with SNP
+                fragments e.g.
+            {'rs9462794':{  # SNP rsID
+                'PHACTR1':{  # Gene
+                    'GM12878', 'HUVEC', 'KBM7', 'K562', 'IMR90', 'HMEC' # Cell lines
+                     }
+                'RP11-716023':{
+                    'GM12878', 'KBM7', 'K562'
+                    }
+                }
+             'rs12198798':{..}
+             'rs6909834':{...}
+             }
+
+        If suppress_intermediate_files=False, a snps.txt file is written
+          with the ff columns:
+            1. SNP rsID
+            2. Cell line
+            3. Fragment chromosome 
+            4. Fragment ID
+    """    
     print("Identifying interactions with genes...")
     fragment_index_db = sqlite3.connect(fragment_database_fp)
     fragment_index_db.text_factory = str
@@ -244,20 +271,21 @@ def find_genes(
             temp_snp_bed = open(output_dir + "/temp_snp_bed.bed", 'w')
             for interaction in interactions[snp][cell_line]:
                 fragment_index.execute(
-                    "SELECT start, end FROM fragments WHERE chr=? and fragment=?", [
-                        interaction[0], interaction[1]])
+                    "SELECT start, end FROM fragments WHERE chr=? and fragment=?",
+                    [interaction[0], interaction[1]])
                 fragment_pos = fragment_index.fetchone()
                 if fragment_pos is None:
-                    print("\tWarning: error retrieving fragment %s on chromosome %s" % (interaction[1], interaction[0]))
+                    print(
+                        "\tWarning: error retrieving fragment %s on chromosome %s"
+                        % (interaction[1], interaction[0]))
                     continue
-                temp_snp_bed.write(
-                    "%s\t%s\t%s\n" %
+                temp_snp_bed.write("%s\t%s\t%s\n" %
                     ("chr" + interaction[0], fragment_pos[0], fragment_pos[1]))
                 if not snpgenes_exist:
                     snpgenes_exist = True
             temp_snp_bed.close()
             if snpgenes_exist:
-                if not genes.has_key(snp):
+                if not snp in genes.keys():
                     genes[snp] = {}
                 int_bed = pybedtools.BedTool(output_dir + "/temp_snp_bed.bed")
                 # Get intersection of this BED file with BED file detailing
@@ -265,24 +293,27 @@ def find_genes(
                 gene_bed = hs_gene_bed.intersect(int_bed, u=True)
                 # Return a list of genes with which SNP is interacting
                 for feat in gene_bed:
-                    if not genes[snp].has_key(feat.name):
-                        genes[snp][feat.name] = Set([])
+                    if not feat.name in genes[snp].keys():
+                        genes[snp][feat.name] = set([])
                     genes[snp][feat.name].add(cell_line)
     os.remove(output_dir + "/temp_snp_bed.bed")
     snps_to_remove = []
     for snp in interactions.keys():
-        if not genes.has_key(snp):
-            print("\tNo SNP-gene spatial interactions detected for %s, removing from analysis" % (snp,))
+        if not snp in genes.keys():
+            print("\tNo SNP-gene spatial interactions detected for %s, " + \
+                  "removing from analysis" % (snp,))
             snps_to_remove.append(snp)
     for snp in snps_to_remove:
         del snps[snp]
         del interactions[snp]
     if not suppress_intermediate_files:
-        with open(output_dir + "/genes.txt", 'w') as genefile:
-            for snp in genes.keys():
-                for gene in genes[snp].keys():
-                    for cell_line in genes[snp][gene]:
-                        genefile.write("%s\t%s\t%s\n" % (snp, gene, cell_line))
+        genefile = open(output_dir + "/genes.txt", 'w')
+        gwriter = csv.writer(genefile, delimiter = '\t')
+        for snp in genes.keys():
+            for gene in genes[snp].keys():
+                for cell_line in genes[snp][gene]:
+                    gwriter.writerow((snp, gene, cell_line))
+
     return genes
 
 
@@ -379,7 +410,7 @@ def query_GTEx_service(
         p_values,
         num_processes,
         output_dir):
-    tissues = Set(["Adipose_Subcutaneous",
+    tissues = set(["Adipose_Subcutaneous",
                    "Adipose_Visceral_Omentum",
                    "Adrenal_Gland",
                    "Artery_Aorta",
@@ -905,7 +936,7 @@ def retrieve_pathways(eqtls, fdr_threshold, num_processes, output_dir):
             if not pathways[pwid]["genes"].has_key(gene):
                 pathways[pwid]["genes"][gene] = {}
             if not pathways[pwid]["genes"][gene].has_key(snp):
-                pathways[pwid]["genes"][gene][snp] = Set([])
+                pathways[pwid]["genes"][gene][snp] = set([])
             pathways[pwid]["genes"][gene][snp].add(tissue)
 
     with open(output_dir + "/pathways.txt", 'w') as pwfile:
@@ -954,7 +985,7 @@ def parse_interactions_files(interactions_files):
                 if not interactions.has_key(snp):
                     interactions[snp] = {}
                 if not interactions[snp].has_key(cell_line):
-                    interactions[snp][cell_line] = Set([])
+                    interactions[snp][cell_line] = set([])
                 interactions[snp][cell_line].add(
                     (interaction[2], int(interaction[3])))
     return interactions
@@ -970,7 +1001,7 @@ def parse_genes_files(genes_files):
                 if not genes.has_key(snp):
                     genes[snp] = {}
                 if not genes[snp].has_key(gene[1]):
-                    genes[snp][gene[1]] = Set([])
+                    genes[snp][gene[1]] = set([])
                 genes[snp][gene[1]].add(gene[2])
     return genes
 
@@ -1668,7 +1699,7 @@ if __name__ == "__main__":
         args.exclude_cell_lines,
         args.output_dir,
         args.suppress_intermediate_files)
-    #genes = find_genes(interactions,fragment_database_fp,gene_bed_fp,args.output_dir,args.suppress_intermediate_files)
+    genes = find_genes(interactions,fragment_database_fp,gene_bed_fp,args.output_dir,args.suppress_intermediate_files)
     #eqtls,num_sig = find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,args.fdr_threshold,args.local_databases_only,args.num_processes,args.output_dir,suppress_intermediate_files=args.suppress_intermediate_files)
     # produce_summary(eqtls,expression_table_fp,args.output_dir)
     # produce_overview(genes,eqtls,num_sig,args.output_dir)
