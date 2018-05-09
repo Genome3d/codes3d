@@ -24,7 +24,7 @@ You will then need to install the CoDeS3D dependencies by running `setup.sh` (yo
   - matplotlib
 - The [WikiPathways Python API client](https://github.com/wikipathways/wikipathways-api-client-py)*
 
-* After installing the WikiPathways Python API client, you may get an ImportError when you attempt to run CoDeS3D. To prevent this, 
+\* After installing the WikiPathways Python API client, you may get an ImportError when you attempt to run CoDeS3D. To prevent this, 
   go to the wikipathways-api-client-py/wikipathways_api_client/ directory and edit 
   `from wikpathways_api_client import WikipathwaysApiClient` to `import wikipathways`.
 
