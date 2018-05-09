@@ -10,7 +10,7 @@ git clone https://github.com/alcamerone/codes3d.git
 
 You will then need to install the CoDeS3D dependencies by running `setup.sh` (you may need to run this using `sudo`). CoDeS3D depends on the following:
 - Ubuntu 14.04+ (untested on other systems)
-- Python 2.7.9+
+- Python 2.7.9+ or Python 3+
 - apt packages:
   - bedtools
   - libxslt1-dev
@@ -22,9 +22,14 @@ You will then need to install the CoDeS3D dependencies by running `setup.sh` (yo
   - requests
   - biopython
   - matplotlib
-- The [WikiPathways Python API client](https://github.com/wikipathways/wikipathways-api-client-py)
+- The [WikiPathways Python API client](https://github.com/wikipathways/wikipathways-api-client-py)*
+
+* After installing the WikiPathways Python API client, you may get an ImportError when you attempt to run CoDeS3D. To prevent this, 
+  go to the wikipathways-api-client-py/wikipathways_api_client/ directory and edit 
+  `from wikpathways_api_client import WikipathwaysApiClient` to `import wikipathways`.
 
 You will then be able to run CoDeS3D scripts!
+
 
 You will also need some data files with which to run your data. The simplest way to acquire these are using the `download_default_data.py` script. This will download the default data to the library directory specified by `libdir` in `docs/codes3d.conf`. Please note that most of the data files are very large, and this step is likely to take a long time, particularly if you wish to use all of the available HiC datasets. Note also that the total size of all available datasets is hundreds of gigabytes, and will require a large disk with a lot of free space.
 
