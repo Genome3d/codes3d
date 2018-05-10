@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import argparse,codes3d,configparser
+import argparse,codes3d,configparser,os
 
 
 if __name__ == "__main__":

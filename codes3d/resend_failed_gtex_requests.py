@@ -96,7 +96,7 @@ def get_GTEx_responses(reqLists,snps,genes,gene_database_fp,num_processes,input_
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Tool for re-sending failed GTEx requests, and optionally appending the results to an existing eQTLs file.")
 	parser.add_argument("-i","--input_dir",required=True,help="The output directory from the CoDeS3D run containing failed_requests.")
-	parser.add_argument("-c","--config",default="docs/conf.py",help="The configuration file to be used in this instance (default: conf.py)")
+	parser.add_argument("-c","--config",default="docs/codes3d.conf.py",help="The configuration file to be used in this instance (default: conf.py)")
 	parser.add_argument("-p","--num_processes",type=int,default=1,help="Desired number of processes for multiprocessing (default: 1).")
 	args = parser.parse_args()
 	config = configparser.ConfigParser()

@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 
 from itertools import cycle
-#from sets import Set
-#from wikipathways_api_client import WikipathwaysApiClient
+import wikipathways_api_client 
 import argparse
 import ast
 import bisect
@@ -19,7 +18,7 @@ import shutil
 import sqlite3
 import time
 from operator import itemgetter
-#from Bio import SeqIO
+import Bio
 #from Bio import Restriction
 #from Bio.Restriction import RestrictionBatch
 #from Bio.Restriction import Restriction_Dictionary
@@ -253,9 +252,8 @@ def find_genes(
         If suppress_intermediate_files=False, a snps.txt file is written
           with the ff columns:
             1. SNP rsID
-            2. Cell line
-            3. Fragment chromosome 
-            4. Fragment ID
+            2. Gene name
+            3. Cell line 
     """    
     print("Identifying interactions with genes...")
     fragment_index_db = sqlite3.connect(fragment_database_fp)
@@ -313,7 +311,6 @@ def find_genes(
             for gene in genes[snp].keys():
                 for cell_line in genes[snp][gene]:
                     gwriter.writerow((snp, gene, cell_line))
-
     return genes
 
 
@@ -327,6 +324,41 @@ def find_eqtls(
         num_processes,
         output_dir,
         suppress_intermediate_files=False):
+    """Identifies genes in fragments that interact with SNP fragments.
+
+    Args:
+        snps: The dictionary of SNP fragments returned from process_inputs
+        genes: The dictionary of genes that interact with SNPs from find_genes 
+        eqtl_data_dir: ../../eQTLs
+        gene_database_fp: ../../gene_reference.db
+        fdr_threshold: Significance threshold for the FDR. Default = 0.05
+        local_databases_only: boolean specifying if only local eQTL database 
+            should be querried.
+        num_processes: Number of processors to be used when multiprocessing.
+        output_dir: User-specified directory for results. Defaults to inputs directory.
+        suppress_intermediate_files: if 'False', snps.txt file is written to output_dir
+
+    Returns:
+        A dict named 'genes' containing genes  in fragments that interact with SNP
+                fragments e.g.
+            {'rs9462794':{  # SNP rsID
+                'PHACTR1':{  # Gene
+                    'GM12878', 'HUVEC', 'KBM7', 'K562', 'IMR90', 'HMEC' # Cell lines
+                     }
+                'RP11-716023':{
+                    'GM12878', 'KBM7', 'K562'
+                    }
+                }
+             'rs12198798':{..}
+             'rs6909834':{...}
+             }
+
+        If suppress_intermediate_files=False, a snps.txt file is written
+          with the ff columns:
+            1. SNP rsID
+            2. Gene name
+            3. Cell line 
+    """    
     print("Identifying eQTLs of interest...")
     eqtls = {}  # A mapping of SNPs to genes with which they have an eQTL relationship, which in turn maps to a list of tissues in which this eQTL occurs
     p_values = []  # A sorted list of all p-values for use computing FDR
@@ -341,7 +373,9 @@ def find_eqtls(
                                         p_values,
                                         num_processes,
                                         output_dir)
+        
     process_eqtls(snps, genes, eqtls, gene_database_fp)
+    """
     eqtlfile = None
     p_values, adj_p_values = compute_adj_pvalues(p_values)
     if not suppress_intermediate_files:
@@ -374,7 +408,7 @@ def find_eqtls(
                                 eqtls[snp][gene]["tissues"][tissue]["qvalue"],
                                 eqtls[snp][gene]["tissues"][tissue]["effect_size"]))
     return (eqtls, num_sig)
-
+    """
 
 def query_local_databases(eqtl_data_dir, genes, eqtls, p_values):
     print("\tQuerying local databases.")
@@ -391,11 +425,11 @@ def query_local_databases(eqtl_data_dir, genes, eqtls, p_values):
                 num_tests += 1
                 for eqtl in eqtl_index.execute(
                     "SELECT pvalue, effect_size FROM eqtls WHERE rsID=? AND gene_name=?",
-                    (snp,
-                     gene)):  # Pull down all eQTLs related to a given SNP to test for relevance:
-                    if not eqtls.has_key(snp):
+                    (snp, gene)):
+                    # Pull down all eQTLs related to a given SNP to test for relevance:
+                    if not snp in eqtls.keys():
                         eqtls[snp] = {}
-                    if not eqtls[snp].has_key(gene):
+                    if not gene in eqtls[snp].keys():
                         eqtls[snp][gene] = {"tissues": {}}
                     eqtls[snp][gene]["tissues"][tissue] = {
                         "pvalue": eqtl[0], "effect_size": eqtl[1]}
@@ -410,6 +444,31 @@ def query_GTEx_service(
         p_values,
         num_processes,
         output_dir):
+    """Queries GTEx for eQTL association between SNP and gene.
+
+    Args:
+        snps: The dictionary of SNP fragments returned from process_inputs
+        genes: The dictionary of genes that interact with SNPs from find_genes 
+        eqtls: A mapping of eQTl relationships between SNPs to genes, which
+            further  maps to a list of tissues in which these eQTLs occur
+        p_values: A sorted list of all p-values for use computing FDR.
+        num_processes: Number of processors to be used when multiprocessing.
+        output_dir: User-specified directory for results. Defaults to inputs 
+            directory.
+
+    Returns:
+        num_tests: The number of successful GTEx responses 
+        eqtls and p_values are updated.
+        If GTEx query fails for SNP-gene-tissue request, the failed requests 
+            are written to failed_GTEx_requests.txt thus:
+            [
+                {
+                    'snpId': 'rs9462794', 
+                    'gencodeId': LINC00669'
+                    'tissueName': 'Artery_Aorta'
+                }
+            ]
+    """
     tissues = set(["Adipose_Subcutaneous",
                    "Adipose_Visceral_Omentum",
                    "Adrenal_Gland",
@@ -465,14 +524,12 @@ def query_GTEx_service(
     for snp in genes.keys():
         for gene in genes[snp].keys():
             for tissue in tissues:
-                # We aren't interested in eQTLs already discovered from local
-                # databases
-                if (not eqtls.has_key(snp) or (eqtls.has_key(snp) and not eqtls[snp].has_key(gene))) or (
-                        eqtls[snp].has_key(gene) and not eqtls[snp][gene]["tissues"].has_key(tissue)):
-                    # if len(reqLists[-1]) < 1000:
-                    # Make each request set contain tissues from only one
-                    # SNP-gene pair
-                    if not reqLists[-1]:
+                # Skip eQTLs already discovered from local databases.
+                if (not snp in eqtls.keys() or
+                        (snp in eqtls.keys() and not gene in eqtls[snp].keys()) or
+                        (gene in eqtls[snp].keys() and
+                        not tissue in eqtls[snp][gene]["tissues"].keys())):
+                    if len(reqLists[-1]) < 950:
                         reqLists[-1].append({"snpId": snp,
                                              "gencodeId": gene,
                                              "tissueName": tissue})
@@ -483,6 +540,9 @@ def query_GTEx_service(
                     else:
                         reqLists.append(
                             [{"snpId": snp, "gencodeId": gene, "tissueName": tissue}])
+    for r in reqLists:
+        print(r)
+        print(len(r))
     print("\tQuerying GTEx online service...")
     gtexResponses = manager.list()
     procPool = multiprocessing.Pool(processes=num_processes)
@@ -505,15 +565,16 @@ def query_GTEx_service(
         with open(output_dir + "/failed_GTEx_requests.txt", 'w') as failed_requests_file:
             failed_requests_file.write(str(failed_requests) + '\n')
     for result in results:
-        if (str(result["geneSymbol"]) == "gene not found" or not snps.has_key(
-                result["snpId"])) or result["pvalue"] == "NA":
+        if (str(result["geneSymbol"]) == "gene not found" or
+                not result["snpId"] in snps.keys() or
+                result["pvalue"] == "NA"):
             continue
         num_tests += 1
         snp = result["snpId"]
         gene = result["geneSymbol"]
-        if not eqtls.has_key(snp):
+        if not snp in eqtls.keys():
             eqtls[snp] = {}
-        if not eqtls[snp].has_key(gene):
+        if not gene in eqtls[snp].keys():
             eqtls[snp][gene] = {"tissues": {}}
         p = float(result["pvalue"])
         effect_size = float(result["beta"])
@@ -592,16 +653,19 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
                 time.sleep(1)
                 return
             elif res.status_code == 500 or res.status_code == 400:
-                print("\t\tThere was an error processing request %s. Writing to failed request log and continuing." % num)
+                print("\t\tThere was an error processing request %s. " +\
+                      "Writing to failed request log and continuing." % num)
                 gtexResponses.append((reqList, "Processing error"))
                 time.sleep(2)
                 return
             else:
-                print("\t\tRequest %s received response with status %s. Trying again in five minutes." % (num, res.status_code))
+                print("\t\tRequest %s received response with status %s. " +\
+                      "Trying again in five minutes." % (num, res.status_code))
                 time.sleep(10)
     except requests.exceptions.ConnectionError:
         try:
-            print("\t\tWarning: Request %s experienced a connection error. Retrying in five minutes." % num)
+            print("\t\tWarning: Request %s experienced a connection error. " +\
+                  "Retrying in five minutes." % num)
             time.sleep(300)
             while True:
                 print("\t\tSending request %s of %s" % (num, num_reqLists))
@@ -613,12 +677,14 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
                     time.sleep(30)
                     return
                 elif res.status_code == 500:
-                    print("\t\tThere was an error processing request %s. Writing to failed request log and continuing." % num)
+                    print("\t\tThere was an error processing request %s. " +\
+                          "Writing to failed request log and continuing." % num)
                     gtexResponses.append((reqList, "Processing error"))
                     time.sleep(30)
                     return
                 else:
-                    print("\t\tRequest %s received response with status: %s. Trying again in five minutes." % (num, res.status_code))
+                    print("\t\tRequest %s received response with status: %s. " +\
+                          "Trying again in five minutes." % (num, res.status_code))
                     time.sleep(300)
         except requests.exceptions.ConnectionError:
             print("\t\tRetry failed. Continuing, but results will be incomplete.")
@@ -1686,21 +1752,17 @@ if __name__ == "__main__":
     if not os.path.isdir(args.output_dir):
         os.makedirs(args.output_dir)
 
-    snps = process_inputs(
-        args.inputs,
-        snp_database_fp,
-        fragment_database_fp,
-        args.output_dir,
-        args.suppress_intermediate_files)
-    interactions = find_interactions(
-        snps,
-        hic_data_dir,
-        args.include_cell_lines,
-        args.exclude_cell_lines,
-        args.output_dir,
-        args.suppress_intermediate_files)
-    genes = find_genes(interactions,fragment_database_fp,gene_bed_fp,args.output_dir,args.suppress_intermediate_files)
-    #eqtls,num_sig = find_eqtls(snps,genes,eqtl_data_dir,gene_database_fp,args.fdr_threshold,args.local_databases_only,args.num_processes,args.output_dir,suppress_intermediate_files=args.suppress_intermediate_files)
+    snps = process_inputs(args.inputs, snp_database_fp, fragment_database_fp,
+                          args.output_dir, args.suppress_intermediate_files)
+    interactions = find_interactions(snps, hic_data_dir, args.include_cell_lines,
+                                     args.exclude_cell_lines, args.output_dir,
+                                     args.suppress_intermediate_files)
+    genes = find_genes(interactions, fragment_database_fp, gene_bed_fp,
+                       args.output_dir, args.suppress_intermediate_files)
+    eqtls, num_sig = find_eqtls(snps, genes, eqtl_data_dir, gene_database_fp,
+                                args.fdr_threshold, args.local_databases_only,
+                                args.num_processes, args.output_dir,
+                                suppress_intermediate_files=args.suppress_intermediate_files)
     # produce_summary(eqtls,expression_table_fp,args.output_dir)
     # produce_overview(genes,eqtls,num_sig,args.output_dir)
     #pathways = retrieve_pathways(eqtls,args.fdr_threshold,args.num_processes,args.output_dir)

@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import argparse,codes3d,configparser
+import argparse,codes3d,configparser, os
 
 
 if __name__ == "__main__":
@@ -19,4 +19,4 @@ if __name__ == "__main__":
 	config = configparser.ConfigParser()
 	config.read(args.config_file)
 
-	build_gene_index(args.gene_files,args.output_bed_fp,args.output_db,config,args.symbol_col,args.chr_col,args.start_col,args.end_col,args.p_threshold_col,args.no_header)
+	codes3d.build_gene_index(args.gene_files,args.output_bed_fp,args.output_db,config,args.symbol_col,args.chr_col,args.start_col,args.end_col,args.p_threshold_col,args.no_header)
