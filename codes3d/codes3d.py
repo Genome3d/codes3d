@@ -30,34 +30,68 @@ from matplotlib import pyplot as plt
 from matplotlib import style
 from matplotlib.ticker import FuncFormatter
 
-def parse_parameters(restriction_enzymes, include, exclude):
-    """Determine if CoDeS3D has HiC libraries restricted with user input 
-    restriction enzymes.
+def parse_parameters(restriction_enzymes, include_cell_line, exclude_cell_line):
+    """Validate user parameters -r, -n and -x.
 
     Args:
-        restriction_enzymes: space-delimited list of enzymes from user.
-
+        restriction_enzymes: space-delimited list of restriction enzymes from
+            user. Limits program to Hic libraries restricted by specified enzyme.
+        include_cell_line: space-delimited list of cell_lines from -n.
+        exclude_cell_line: space-delimited list of cell_lines from -x
     Returns:
         res_enzymes: A list of restriction enzymes of which HiC libraries are 
             included.
+        include_cells: A list of validated HiC cell lines to be querried.
+        exclude_cells: A list of validated HiC cell lines to be excluded.
     """
     print('Parsing HiC library restriction enzymes...')
     res_enzymes = []
+    include_cells = []
+    exclude_cells = []
     if restriction_enzymes == None:
-        return HIC_RESTRICTION_ENZYMES
-
-    for enzyme in restriction_enzymes:
-        # Handle user input case issues
-        enzymes_upper = [e.upper() for e in HIC_RESTRICTION_ENZYMES]
-        if not enzyme.upper() in enzymes_upper:
-            print('Warning: NO HiC libraries restricted with %s.' % enzyme)
-        else:
-            res_enzymes.append(HIC_RESTRICTION_ENZYMES[
-                enzymes_upper.index(enzyme.upper())])
+        res_enzymes = HIC_RESTRICTION_ENZYMES
+    else:
+        for enzyme in restriction_enzymes:
+            # Handle user input case issues
+            enzymes_upper = [e.upper() for e in HIC_RESTRICTION_ENZYMES]
+            if not enzyme.upper() in enzymes_upper:
+                print('Warning: NO HiC libraries restricted with %s.' % enzyme)
+            else:
+                res_enzymes.append(HIC_RESTRICTION_ENZYMES[
+                    enzymes_upper.index(enzyme.upper())])
     if not res_enzymes:
         sys.exit("Program terminating: No HiC libraries are prepared with " + 
               "your restriction enzyme(s).")
-    return res_enzymes
+    cell_lines = []
+    for enzyme in res_enzymes:
+        cell_lines += os.listdir(os.path.join(lib_dir, enzyme, 'hic_data'))
+    cell_lines_upper = [c.upper() for c in cell_lines]
+    to_help = '1.\t' + cell_lines[0]
+    if len(cell_lines) > 1:
+        for i, cell in enumerate(cell_lines, start=1):
+            to_help += '\n' + str(i+1) + '.\t' + cell
+    if include_cell_line == None:
+        include_cells = None
+    else:
+        for cell in include_cell_line:
+                if cell.upper() in cell_lines_upper:
+                    include_cells.append(cell_lines[cell_lines_upper.index(cell.upper())])
+        if include_cells != None and len(include_cells) == 0:
+            sys.exit("We cannot find one or more of the cell lines you " +\
+                     "passed to the -n option. Following is the list of " +\
+                     "cell lines we have: \n" + to_help)
+    if exclude_cell_line == None:
+        exclude_cells = None
+    else:
+        for cell in exclude_cell_line:
+            if cell.upper() in cell_lines_upper:
+                exclude_cells.append(cell_lines[cell_lines_upper.index(cell.upper())])
+        if exclude_cells != None and len(exclude_cells) == 0:
+            sys.exit("We cannot find one or more of the cell lines you " +\
+                     "passed to the -x option. Following is the list of " +\
+                     "cell lines we have: \n" + to_help)
+
+    return res_enzymes, include_cells, exclude_cells
 
 def process_inputs(inputs, snp_database_fp, lib_dir,
                    restriction_enzymes, output_dir,
@@ -316,11 +350,10 @@ def find_genes(
                 fragments e.g.
             {'rs9462794':{  # SNP rsID
                 'PHACTR1':{  # Gene
-                    'GM12878', 'HUVEC', 'KBM7', 'K562', 'IMR90', 'HMEC' # Cell lines
+                    'GM12878_Rao2014': {'interactions': 44, 'replicates': 22},
+                    'KBM7_Rao2014': {'interactions': 9, 'replicates': 5}
                      }
-                'RP11-716023':{
-                    'GM12878', 'KBM7', 'K562'
-                    }
+                'EDN1':{...}
                 }
              'rs12198798':{..}
              'rs6909834':{...}
@@ -331,6 +364,8 @@ def find_genes(
             1. SNP rsID
             2. Gene name
             3. Cell line 
+            4. HiC contact counts
+            5. Number of cell line replicates 
     """    
     print("Identifying interactions with genes...")
     hs_gene_bed = pybedtools.BedTool(gene_bed_fp)
@@ -347,6 +382,9 @@ def find_genes(
                 snpgenes_exist = False
                 temp_snp_bed = open(output_dir + "/temp_snp_bed.bed", 'w')
                 twriter = csv.writer(temp_snp_bed, delimiter = '\t')
+                num_reps = len([rep for rep in os.listdir(
+                    os.path.join(lib_dir, enzyme, 'hic_data', cell_line))
+                    if rep.endswith('.db')])
                 for interaction in interactions[enzyme][snp][cell_line]:
                     fragment_index.execute(
                         "SELECT start, end FROM fragments WHERE chr=? and fragment=?",
@@ -379,9 +417,7 @@ def find_genes(
                             genes[snp][gene_name][cell_line] = {}
                             genes[snp][gene_name][cell_line]['interactions'] = 0
                         genes[snp][gene_name][cell_line]['interactions'] += 1
-    for snp in genes:
-        for gene in genes[snp]:
-            print(snp, gene, genes[snp][gene])
+                        genes[snp][gene_name][cell_line]['replicates'] = num_reps
     os.remove(output_dir + "/temp_snp_bed.bed")
     snps_to_remove = {}
     for enzyme in interactions.keys():
@@ -403,7 +439,9 @@ def find_genes(
         for snp in genes.keys():
             for gene in genes[snp].keys():
                 for cell_line in genes[snp][gene]:
-                    gwriter.writerow((snp, gene, cell_line, genes[snp][gene][cell_line]['interactions']))
+                    gwriter.writerow((snp, gene, cell_line,
+                                      genes[snp][gene][cell_line]['interactions'],
+                                      genes[snp][gene][cell_line]['replicates']))
     return genes
 
 
@@ -445,6 +483,8 @@ def find_eqtls(
                             }
                         }
                     'cell_lines': ['K562_Rao2014', 'GM12878_Rao2014']
+                    'hic_cell': '1.24, 4.00'
+                    'hic_score': 5.24'
                     'p_thresh': 'NA'
                     'cis?': False
                     'gene_chr': '18'
@@ -475,12 +515,14 @@ def find_eqtls(
             6. Gene start
             7. Gene end
             8. Cell lines
-            9. Cis interaction?
-            10. eQTL p threshold from GTEx
-            11. Tissue of eQTL interaction
-            12. eQTL pvalue
-            13. Adjusted pvalue
-            14. eQTL effect size
+            9  Cell lines HiC score
+            10. HiC contact score
+            11.. Cis interaction?
+            12. eQTL p threshold from GTEx
+            13. Tissue of eQTL interaction
+            14. eQTL pvalue
+            15. Adjusted pvalue
+            16. eQTL effect size
     """    
     print("Identifying eQTLs of interest...")
     eqtls = {}  # A mapping of SNP-gene eQTL relationships
@@ -523,12 +565,15 @@ def find_eqtls(
                          eqtls[snp][gene]["gene_start"],
                          eqtls[snp][gene]["gene_end"],
                          eqtls[snp][gene]["cell_lines"],
+                         eqtls[snp][gene]["hic_score"],
+                         eqtls[snp][gene]["hic_cells"],
                          eqtls[snp][gene]["cis?"],
                          eqtls[snp][gene]["p_thresh"],
                          tissue,
                          eqtls[snp][gene]["tissues"][tissue]["pvalue"],
                          eqtls[snp][gene]["tissues"][tissue]["qvalue"],
-                         eqtls[snp][gene]["tissues"][tissue]["effect_size"]))
+                         eqtls[snp][gene]["tissues"][tissue]["effect_size"]
+                         ))
     return (eqtls, num_sig)
 
 
@@ -772,6 +817,38 @@ def process_eqtls(snps, genes, eqtls, gene_database_fp):
                 eqtls[snp][gene]["cis?"] = True
             else:
                 eqtls[snp][gene]["cis?"] = False
+            hic_score, hic_cells = calc_hic_contacts(genes, snp, gene)
+            eqtls[snp][gene]["hic_score"] = hic_score
+            eqtls[snp][gene]["hic_cells"] = hic_cells
+
+            
+def calc_hic_contacts(genes, snp, gene):
+    """Calculates score of HiC coontacts between SNP and gene.
+    
+    Args:
+        genes: Dictionary from find_genes
+        snp:
+        gene:
+
+    Returns:
+        hic_score: sum of the averages of contacts per cell line.
+        score_list: a list of the means of contacts in each cell line
+    """
+    hic_score = 0
+    scores = []
+    for cell_line in genes[snp][gene]:
+        score = genes[snp][gene][cell_line]['interactions'] \
+            / float(genes[snp][gene][cell_line]['replicates'])
+        hic_score += score
+        scores.append(score)
+    score_list = "{:.2f}".format(scores[0])
+    if len(scores) > 1:
+        for i in range(1, len(scores)):
+            score_list += ', ' + "{:.2f}".format(scores[i])
+    hic_score = "{:.4f}".format(hic_score)
+
+    return(hic_score, score_list)
+
 
 def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
     """Posts and receives requests from GTEx 
@@ -912,14 +989,27 @@ def produce_summary(eqtls, expression_table_fp, output_dir):
         os.mkdir(output_dir)
     summary = open(output_dir + "/summary.txt", 'w')
     summ_writer = csv.writer(summary, delimiter='\t')
-    summ_header = ['SNP', 'SNP_Chromosome', 'SNP_Locus',
-                   'Gene_Name', 'Gene_Chromosome',
-                   'Gene_Start', 'Gene_End', 'Tissue',
-                   'p-value', 'Adj_p-value', 'Effect_Size',
-                   'Cell_Lines', 'GTEx_cis_p_Threshold',
-                   'cis_SNP-gene_interaction', 'SNP-gene_Distance',
-                   'Expression_Level_In_eQTL_Tissue', 'Max_Expressed_Tissue',
-                   'Maximum_Expression_Level', 'Min_Expressed_Tissue',
+    summ_header = ['SNP',
+                   'SNP_Chromosome',
+                   'SNP_Locus',
+                   'Gene_Name',
+                   'Gene_Chromosome',
+                   'Gene_Start',
+                   'Gene_End',
+                   'Tissue',
+                   'p-value',
+                   'Adj_p-value',
+                   'Effect_Size',
+                   'Cell_Lines',
+                   'Cell_Lines_HiC_scores',
+                   'HiC_Contact_Score',
+                   'GTEx_cis_p_Threshold',
+                   'cis_SNP-gene_interaction',
+                   'SNP-gene_Distance',
+                   'Expression_Level_In_eQTL_Tissue',
+                   'Max_Expressed_Tissue',
+                   'Maximum_Expression_Level',
+                   'Min_Expressed_Tissue',
                    'Min_Expression_Level']
     summ_writer.writerow(summ_header)
     gene_df = pandas.read_table(expression_table_fp, index_col="Description")
@@ -1001,6 +1091,8 @@ def produce_summary(eqtls, expression_table_fp, output_dir):
                     eqtls[snp][gene]["tissues"][tissue]["qvalue"],
                     eqtls[snp][gene]["tissues"][tissue]["effect_size"],
                     to_cell_line,
+                    eqtls[snp][gene]["hic_cells"],
+                    eqtls[snp][gene]["hic_score"],
                     eqtls[snp][gene]["p_thresh"],
                     eqtls[snp][gene]["cis?"],
                     distance_from_snp,
@@ -1064,6 +1156,7 @@ def produce_sig_eqtls(all_summary_rows, summ_header, output_dir):
             13. GTEx_cis_p_Threshold
             14. cis_SNP-gene_interaction 
             15. SNP-gene_Distance
+            
             16. Expression_Level_In_eQTL_Tissue
             17. Max_Expressed_Tissue
             18. Maximum_Expression_Level
@@ -1965,24 +2058,24 @@ if __name__ == "__main__":
     GTEX_CERT = config.get("Defaults", "GTEX_CERT")
     HIC_RESTRICTION_ENZYMES = [e.strip() for e in config.get(
         "Defaults", "HIC_RESTRICTION_ENZYMES").split(',')]
-    restriction_enzymes = parse_parameters(args.restriction_enzymes,
-                                          args.include_cell_lines,
-                                          args.exclude_cell_lines)
+    restriction_enzymes, include_cell_lines, exclude_cell_lines =\
+        parse_parameters(args.restriction_enzymes, \
+                         args.include_cell_lines, \
+                         args.exclude_cell_lines)
     if not os.path.isdir(args.output_dir):
         os.makedirs(args.output_dir)
-
     snps = process_inputs(args.inputs, snp_database_fp, lib_dir,
                           restriction_enzymes, args.output_dir,
                           args.suppress_intermediate_files)
-    interactions = find_interactions(snps, lib_dir, args.include_cell_lines,
-                                     args.exclude_cell_lines, args.output_dir,
+    interactions = find_interactions(snps, lib_dir, include_cell_lines,
+                                     exclude_cell_lines, args.output_dir,
                                      args.suppress_intermediate_files)
     genes = find_genes(interactions, lib_dir, gene_bed_fp,
                        args.output_dir, args.suppress_intermediate_files)
-    #eqtls, num_sig = find_eqtls(snps, genes, eqtl_data_dir, gene_database_fp,
-    #                            args.fdr_threshold, args.local_databases_only,
-    #                            args.num_processes, args.output_dir,
-    #                            suppress_intermediate_files=args.suppress_intermediate_files)
-    #produce_summary(eqtls,expression_table_fp,args.output_dir)
-    #produce_overview(genes,eqtls,num_sig,args.output_dir)
-    #pathways = retrieve_pathways(eqtls,args.fdr_threshold,args.num_processes,args.output_dir)
+    eqtls, num_sig = find_eqtls(snps, genes, eqtl_data_dir, gene_database_fp,
+                                args.fdr_threshold, args.local_databases_only,
+                                args.num_processes, args.output_dir,
+                                suppress_intermediate_files=args.suppress_intermediate_files)
+    produce_summary(eqtls,expression_table_fp,args.output_dir)
+    produce_overview(genes,eqtls,num_sig,args.output_dir)
+    pathways = retrieve_pathways(eqtls,args.fdr_threshold,args.num_processes,args.output_dir)
