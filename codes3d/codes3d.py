@@ -10,6 +10,7 @@ import csv
 import json
 import multiprocessing
 import os
+import sys
 import pandas
 import pybedtools
 import re
@@ -29,8 +30,37 @@ from matplotlib import pyplot as plt
 from matplotlib import style
 from matplotlib.ticker import FuncFormatter
 
+def parse_parameters(restriction_enzymes, include, exclude):
+    """Determine if CoDeS3D has HiC libraries restricted with user input 
+    restriction enzymes.
 
-def process_inputs(inputs, snp_database_fp, fragment_database_fp, output_dir,
+    Args:
+        restriction_enzymes: space-delimited list of enzymes from user.
+
+    Returns:
+        res_enzymes: A list of restriction enzymes of which HiC libraries are 
+            included.
+    """
+    print('Parsing HiC library restriction enzymes...')
+    res_enzymes = []
+    if restriction_enzymes == None:
+        return HIC_RESTRICTION_ENZYMES
+
+    for enzyme in restriction_enzymes:
+        # Handle user input case issues
+        enzymes_upper = [e.upper() for e in HIC_RESTRICTION_ENZYMES]
+        if not enzyme.upper() in enzymes_upper:
+            print('Warning: NO HiC libraries restricted with %s.' % enzyme)
+        else:
+            res_enzymes.append(HIC_RESTRICTION_ENZYMES[
+                enzymes_upper.index(enzyme.upper())])
+    if not res_enzymes:
+        sys.exit("Program terminating: No HiC libraries are prepared with " + 
+              "your restriction enzyme(s).")
+    return res_enzymes
+
+def process_inputs(inputs, snp_database_fp, lib_dir,
+                   restriction_enzymes, output_dir,
                    suppress_intermediate_files=False):
     """Finds restriction fragments in which SNPs lie.
 
@@ -38,15 +68,22 @@ def process_inputs(inputs, snp_database_fp, fragment_database_fp, output_dir,
         inputs: File(s) (or stdin) containing SNP rsIDs or genomic positions
           in the format chr<x>:<locus>
         snp_database_fp: ../../lib/snp_index_dbSNP_b147.db
-        fragment_database_fp: ../../Homo_sapiens.GRCh37.75.dna.fragments.db
+        lib_dir: ../lib #To point to fragment databases of different hic restrictions.
         output_dir: User-specified directory for results. Defaults to inputs directory.
         suppress_intermediate_files: if 'False', snps.txt file is written to output_dir
 
     Returns:
         A dict named snps with the ff structure:
-            {'rs9462794':{'chr': '6', 'locus': 12445846, 'frag': 30968},
-             'rs12198798':{'chr': '6', 'locus': 12510126, 'frag': 31138},
-             'rs6909834':{'chr': '6', 'locus': 12805581, 'frag': 31816}
+            {'rs9462794':{
+                          'chr': '6', 
+                          'locus': 12445846, 
+                          'fragments':[
+                                       {'frag': 30968, 'enzyme': 'MboI'},
+                                       {'frag': 3664, 'enzyme': 'HindIII'}
+                                    ]
+                        },
+             'rs12198798':{...},
+             'rs6909834':{...}
              }
 
         If suppress_intermediate_files=False, a snps.txt file is written
@@ -55,14 +92,15 @@ def process_inputs(inputs, snp_database_fp, fragment_database_fp, output_dir,
             2. SNP chromosome
             3. SNP position
             4. Fragment ID
+            5. Fragment restriction enzyme
     """
-    print("Processing input...")
+    print("Processing SNP input...")
     snp_db = sqlite3.connect(snp_database_fp)
     snp_db.text_factory = str
     snp_index = snp_db.cursor()
-    fragment_index_db = sqlite3.connect(fragment_database_fp)
-    fragment_index_db.text_factory = str
-    fragment_index = fragment_index_db.cursor()
+    #fragment_index_db = sqlite3.connect(fragment_database_fp)
+    #fragment_index_db.text_factory = str
+    #fragment_index = fragment_index_db.cursor()
     snps = {}
     for input in inputs:
         if os.path.isfile(input):
@@ -81,17 +119,29 @@ def process_inputs(inputs, snp_database_fp, fragment_database_fp, output_dir,
                 if snp is None:
                     print("Warning: %s does not exist in SNP database." % id)
                 else:
-                    # Query fragment_bed_fp for SNP fragment.
-                    fragment_index.execute("SELECT fragment FROM fragments " +
+                    # Query each fragment_bed_fp for SNP fragment.
+                    for enzyme in restriction_enzymes:
+                        fragment_database_fp = os.path.join(lib_dir,enzyme,'dna.fragments.db')
+                        fragment_index_db = sqlite3.connect(fragment_database_fp)
+                        fragment_index_db.text_factory = str
+                        fragment_index = fragment_index_db.cursor()
+                        fragment_index.execute("SELECT fragment FROM fragments " +
                                            "WHERE chr=? AND start<=? AND end>=?",
                                            [snp[1], snp[2], snp[2]])
-                    snp_fragment_result = fragment_index.fetchone()
-                    if snp_fragment_result is None:
-                        print("Warning: error retrieving SNP fragment for SNP " +
-                              snp[0])
-                    else:
-                        snps[snp[0]] = {"chr": snp[1], "locus": snp[2],
-                                        "frag": snp_fragment_result[0]}
+                        snp_fragment_result = fragment_index.fetchone()
+                        if snp_fragment_result is None:
+                            print("Warning: error retrieving SNP fragment for SNP " +
+                                  snp[0])
+                        else:
+                            if not snp[0] in snps.keys():
+                                snps[snp[0]] = {"chr": '', "locus": "", "fragments": []}
+                                snps[snp[0]]["chr"] = snp[1]
+                                snps[snp[0]]["locus"] = snp[2]
+                                snps[snp[0]]["fragments"].append({"frag": snp_fragment_result[0],
+                                                               "enzyme": enzyme})
+                            else:
+                                snps[snp[0]]["fragments"].append({"frag": snp_fragment_result[0],
+                                                               "enzyme": enzyme})
             infile.close()
         else:
             snp = None
@@ -108,24 +158,38 @@ def process_inputs(inputs, snp_database_fp, fragment_database_fp, output_dir,
                         "Warning: %s does not exist in SNP database." %
                         input)
                 else:
-                    # Query fragment_bed_fp for SNP fragment.
-                    fragment_index.execute("SELECT fragment FROM fragments " +
+                    # Query each fragment_bed_fp for SNP fragment.
+                    for enzyme in restriction_enzymes:
+                        fragment_database_fp = os.path.join(lib_dir,enzyme,'dna.fragments.db')
+                        fragment_index_db = sqlite3.connect(fragment_database_fp)
+                        fragment_index_db.text_factory = str
+                        fragment_index = fragment_index_db.cursor()
+                        fragment_index.execute("SELECT fragment FROM fragments " +
                                            "WHERE chr=? AND start<=? AND end>=?",
                                            [snp[1], snp[2], snp[2]])
-                    snp_fragment_result = fragment_index.fetchone()
-                    if snp_fragment_result is None:
-                        print("Warning: error retrieving SNP fragment for SNP " +
-                              snp[0])
-                    else:
-                        snps[snp[0]] = {"chr": snp[1], "locus": snp[2],
-                                        "frag": snp_fragment_result[0]}
+                        snp_fragment_result = fragment_index.fetchone()
+                        if snp_fragment_result is None:
+                            print("Warning: error retrieving SNP fragment for SNP " +
+                                  snp[0])
+                        else:
+                            if not snp[0] in snps.keys():
+                                snps[snp[0]] = {"chr": '', "locus": "", "fragments": []}
+                                snps[snp[0]]["chr"] = snp[1]
+                                snps[snp[0]]["locus"] = snp[2]
+                                snps[snp[0]]["fragments"].append({"frag": snp_fragment_result[0],
+                                                               "enzyme": enzyme})
+                            else:
+                                snps[snp[0]]["fragments"].append({"frag": snp_fragment_result[0],
+                                                               "enzyme": enzyme})
     if not suppress_intermediate_files:
         if not os.path.isdir(output_dir):
             os.makedirs(output_dir)
         snpfile = open(output_dir + "/snps.txt", 'w')
         swriter = csv.writer(snpfile, delimiter='\t')
         for snp, props in snps.items():
-            swriter.writerow((snp, props["chr"], props["locus"], props["frag"]))
+            for frag in props["fragments"]:
+                swriter.writerow((snp, props["chr"], props["locus"],
+                                  frag["frag"], frag["enzyme"]))
         snpfile.close()
 
     return snps
@@ -133,7 +197,7 @@ def process_inputs(inputs, snp_database_fp, fragment_database_fp, output_dir,
 
 def find_interactions(
         snps,
-        hic_data_dir,
+        lib_dir,
         include,
         exclude,
         output_dir,
@@ -151,14 +215,20 @@ def find_interactions(
     Returns:
         A dict named 'interactions' containing fragments interacting with SNPs
             in each cell line e.g.:
-            {'rs9462794':{  # SNP rsID
-                'GM12878':{  # Cell line
-                    ('6', '30099'), ('6', '31188') #Fragment chr and ID
-                'HeLa':{
-                    ('12', '19151'), ('13', '1535')}}
-             'rs12198798':{..}
-             'rs6909834':{...}
-             }
+            {'MboI':{
+                'rs9462794':{  # SNP rsID
+                    'GM12878':{  # Cell line
+                        ('6', '30099'), ('6', '31188') #Fragment chr and ID
+                        }
+                    'HeLa':{
+                        ('12', '19151'), ('13', '1535')
+                        }
+                    }
+                'rs12198798':{..}
+                'rs6909834':{...}
+                }
+            'HindIII'{...}
+            }
 
         If suppress_intermediate_files=False, a snp-gene_interaction.txt file is written
           with the ff columns:
@@ -173,46 +243,53 @@ def find_interactions(
         include_set = set(include)
     if exclude:
         exclude_set = set(exclude)
-    # A mapping of each SNP to the fragments with which the fragment it is on
-    # interacts
-    interactions = {}
-    for snp in snps.keys():
-        interactions[snp] = {}
-    for cell_line in os.listdir(hic_data_dir):
-        if (include and cell_line not in include) or (
-                exclude and cell_line in exclude):
-            continue  # Enforce the -n or -x options
-        if os.path.isdir(os.path.join(hic_data_dir, cell_line)):
-            print("\tSearching cell line " + cell_line)
-            for snp in snps.keys():
-                # A set of unique interactions for SNP
-                interactions[snp][cell_line] = set([])
-                print("\t\tFinding interactions for " + snp)
-                for replicate in os.listdir(hic_data_dir + '/' + cell_line):
-                    if replicate.endswith(".db"):
-                        rep_db = sqlite3.connect(
-                            hic_data_dir + '/' + cell_line + '/' + replicate)
-                        rep_db.text_factory = str
-                        rep_ints = rep_db.cursor()
-                        print("\t\t\tSearching replicate " + replicate)
-                        # Search database for fragments interacting with SNP
-                        # fragment
-                        for interaction in rep_ints.execute(
-                            "SELECT chr2," +
-                            "fragment2 FROM interactions WHERE chr1=?" +
-                            "AND fragment1=?",
-                            [
-                                snps[snp]["chr"],
-                                snps[snp]["frag"]]):
-                            interactions[snp][cell_line].add(interaction)
+    interactions = {} 
+    for enzyme in restriction_enzymes:
+        interactions[enzyme] = {}
+        for snp in snps.keys():
+            interactions[enzyme][snp] = {}
+    for enzyme in restriction_enzymes:
+        print("\tSearching HiC libraries restricted with " + enzyme)
+        hic_data_dir = os.path.join(lib_dir,enzyme, 'hic_data')
+        for cell_line in os.listdir(hic_data_dir):
+            if (include and cell_line not in include) or (
+                    exclude and cell_line in exclude):
+                continue  # Enforce the -n or -x options
+            if os.path.isdir(os.path.join(hic_data_dir, cell_line)):
+                print("\t\tSearching cell line " + cell_line)
+                for snp in snps.keys():
+                   # A set of unique interactions for SNP
+                    for fragment in snps[snp]['fragments']:
+                        if not fragment['enzyme'] == enzyme:
+                            continue
+                        interactions[enzyme][snp][cell_line] = set([])
+                        print("\t\t\tFinding interactions for " + snp)
+                        for replicate in os.listdir(hic_data_dir + '/' + cell_line):
+                            if replicate.endswith(".db"):
+                                rep_db = sqlite3.connect(
+                                    hic_data_dir + '/' + cell_line + '/' + replicate)
+                                rep_db.text_factory = str
+                                rep_ints = rep_db.cursor()
+                                print("\t\t\t\tSearching replicate " + replicate)
+                                # Search database for fragments interacting with SNP
+                                # fragment
+                                for interaction in rep_ints.execute(
+                                        "SELECT chr2," +
+                                        "fragment2 FROM interactions WHERE chr1=?" +
+                                        "AND fragment1=?",
+                                        [
+                                            snps[snp]["chr"],
+                                            fragment["frag"]]):
+                                        interactions[enzyme][snp][cell_line].add(interaction)
     if not suppress_intermediate_files:
         intfile = open(output_dir + "/snp-gene_interactions.txt", 'w')
         iwriter = csv.writer(intfile, delimiter='\t')
-        for snp in interactions.keys():
-            for cell_line in interactions[snp].keys():
-                for interaction in interactions[snp][cell_line]:
-                    iwriter.writerow(
-                        (snp, cell_line, interaction[0], interaction[1]))
+        for enzyme in interactions.keys():
+            for snp in interactions[enzyme].keys():
+                for cell_line in interactions[enzyme][snp].keys():
+                    for interaction in interactions[enzyme][snp][cell_line]:
+                        iwriter.writerow(
+                            (snp, cell_line, interaction[0], interaction[1], enzyme))
         intfile.close()
 
     return interactions
@@ -256,61 +333,77 @@ def find_genes(
             3. Cell line 
     """    
     print("Identifying interactions with genes...")
-    fragment_index_db = sqlite3.connect(fragment_database_fp)
-    fragment_index_db.text_factory = str
-    fragment_index = fragment_index_db.cursor()
     hs_gene_bed = pybedtools.BedTool(gene_bed_fp)
     genes = {}
-    for snp in interactions.keys():
+    for enzyme in interactions.keys():
+        fragment_database_fp = os.path.join(lib_dir, enzyme, 'dna.fragments.db')
+        fragment_index_db = sqlite3.connect(fragment_database_fp)
+        fragment_index_db.text_factory = str
+        fragment_index = fragment_index_db.cursor()
+        for snp in interactions[enzyme].keys():
                 # Generate BED file of all fragments interacting with
                 # SNP-containing fragment
-        for cell_line in interactions[snp].keys():
-            snpgenes_exist = False
-            temp_snp_bed = open(output_dir + "/temp_snp_bed.bed", 'w')
-            for interaction in interactions[snp][cell_line]:
-                fragment_index.execute(
-                    "SELECT start, end FROM fragments WHERE chr=? and fragment=?",
-                    [interaction[0], interaction[1]])
-                fragment_pos = fragment_index.fetchone()
-                if fragment_pos is None:
-                    print(
-                        "\tWarning: error retrieving fragment %s on chromosome %s"
-                        % (interaction[1], interaction[0]))
-                    continue
-                temp_snp_bed.write("%s\t%s\t%s\n" %
-                    ("chr" + interaction[0], fragment_pos[0], fragment_pos[1]))
-                if not snpgenes_exist:
-                    snpgenes_exist = True
-            temp_snp_bed.close()
-            if snpgenes_exist:
-                if not snp in genes.keys():
-                    genes[snp] = {}
-                int_bed = pybedtools.BedTool(output_dir + "/temp_snp_bed.bed")
-                # Get intersection of this BED file with BED file detailing
-                # gene locations
-                gene_bed = hs_gene_bed.intersect(int_bed, u=True)
-                # Return a list of genes with which SNP is interacting
-                for feat in gene_bed:
-                    if not feat.name in genes[snp].keys():
-                        genes[snp][feat.name] = set([])
-                    genes[snp][feat.name].add(cell_line)
+            for cell_line in interactions[enzyme][snp].keys():
+                snpgenes_exist = False
+                temp_snp_bed = open(output_dir + "/temp_snp_bed.bed", 'w')
+                twriter = csv.writer(temp_snp_bed, delimiter = '\t')
+                for interaction in interactions[enzyme][snp][cell_line]:
+                    fragment_index.execute(
+                        "SELECT start, end FROM fragments WHERE chr=? and fragment=?",
+                        [interaction[0], interaction[1]])
+                    fragment_pos = fragment_index.fetchall()
+                    if fragment_pos is None:
+                        print(
+                            "\tWarning: error retrieving fragment %s on chromosome %s"
+                            % (interaction[1], interaction[0]))
+                        continue
+                    for f in fragment_pos:
+                        twriter.writerow(("chr" + interaction[0], f[0], f[1]))
+                    if not snpgenes_exist:
+                        snpgenes_exist = True
+                temp_snp_bed.close()
+                if snpgenes_exist:
+                    if not snp in genes.keys():
+                        genes[snp] = {}
+                    int_bed = pybedtools.BedTool(output_dir + "/temp_snp_bed.bed")
+                    # Return a list of genes with which SNP is interacting
+                    #    and the number of HiC contacts for each cell line.
+                    gene_bed = int_bed.intersect(hs_gene_bed, loj=True)
+                    for feat in gene_bed:
+                        gene_name = feat[6]
+                        if gene_name == '.': # '.' indicates a NULL overlap.
+                            continue
+                        if not gene_name in genes[snp].keys():
+                            genes[snp][gene_name] = {}
+                        if not cell_line in genes[snp][gene_name].keys():
+                            genes[snp][gene_name][cell_line] = {}
+                            genes[snp][gene_name][cell_line]['interactions'] = 0
+                        genes[snp][gene_name][cell_line]['interactions'] += 1
+    for snp in genes:
+        for gene in genes[snp]:
+            print(snp, gene, genes[snp][gene])
     os.remove(output_dir + "/temp_snp_bed.bed")
-    snps_to_remove = []
-    for snp in interactions.keys():
-        if not snp in genes.keys():
-            print("\tNo SNP-gene spatial interactions detected for %s, " + \
-                  "removing from analysis" % (snp,))
-            snps_to_remove.append(snp)
-    for snp in snps_to_remove:
-        del snps[snp]
-        del interactions[snp]
+    snps_to_remove = {}
+    for enzyme in interactions.keys():
+        snps_to_remove[enzyme] = []
+        for snp in interactions[enzyme].keys():
+            if not snp in genes.keys():
+                print("\tNo SNP-gene spatial interactions detected for %s, " + \
+                      "removing from analysis" % (snp,))
+                snps_to_remove[enzyme].append(snp)
+    for enzyme in snps_to_remove.keys(): #Update snps and interactions mappings.
+        for snp in snps_to_remove[enzyme]:
+            for i, frag in enumerate(snps[snp]['fragments']):
+                if frag['enzyme'] == enzyme:
+                    snps[snp]['fragments'].remove(snps[snp]['fragments'][i])
+            del interactions[enzyme][snp]
     if not suppress_intermediate_files:
         genefile = open(output_dir + "/genes.txt", 'w')
         gwriter = csv.writer(genefile, delimiter = '\t')
         for snp in genes.keys():
             for gene in genes[snp].keys():
                 for cell_line in genes[snp][gene]:
-                    gwriter.writerow((snp, gene, cell_line))
+                    gwriter.writerow((snp, gene, cell_line, genes[snp][gene][cell_line]['interactions']))
     return genes
 
 
@@ -329,14 +422,14 @@ def find_eqtls(
     Args:
         snps: The dictionary of SNP fragments returned from process_inputs
         genes: The dictionary of genes that interact with SNPs from find_genes 
-        eqtl_data_dir: ../../eQTLs
+        eqtl_data_dir: ../../eQTLs  #For local eQTL query
         gene_database_fp: ../../gene_reference.db
         fdr_threshold: Significance threshold for the FDR. Default = 0.05
         local_databases_only: boolean specifying if only local eQTL database 
             should be querried.
         num_processes: Number of processors to be used when multiprocessing.
         output_dir: User-specified directory for results. Defaults to inputs directory.
-        suppress_intermediate_files: if 'False', snps.txt file is written to output_dir
+        suppress_intermediate_files: if 'False', eqtls.txt file is written to output_dir
 
     Returns:
         eqtls: A mapping of eQTl relationships between SNPs to genes, which
@@ -351,7 +444,7 @@ def find_eqtls(
                             'pvalue': 0.3464, 'effect_size': 0.0525, 'qvalue': 0.97
                             }
                         }
-                    'cell_lines': ['K562']
+                    'cell_lines': ['K562_Rao2014', 'GM12878_Rao2014']
                     'p_thresh': 'NA'
                     'cis?': False
                     'gene_chr': '18'
@@ -360,7 +453,12 @@ def find_eqtls(
                     }
                 'PHACTR1{...}
                 'snp_info': {
-                    'chr': '6', 'locus': 12445846
+                    'chr': '6',
+                    'locus': 12445846,
+                    'fragments': [
+                        {'frag': 30968, 'enzyme': 'MboI'},
+                        {'frag': 3664, 'enzyme': 'HindIII'}
+                        ]
                     }
             'rs12198798'{...}
                 }
@@ -407,34 +505,36 @@ def find_eqtls(
     for snp in eqtls.keys():
         num_sig[snp] = 0
         for gene in eqtls[snp].keys():
-            if not gene == "snp_info":
-                for tissue in eqtls[snp][gene]["tissues"].keys():
-                    eqtls[snp][gene]["tissues"][tissue]["qvalue"] \
-                            = adj_p_values[p_values.index(
-                                eqtls[snp][gene]["tissues"][tissue]["pvalue"])]
-                    if eqtls[snp][gene]["tissues"][tissue]["qvalue"] \
-                            < fdr_threshold:
-                        num_sig[snp] += 1
-                    if not suppress_intermediate_files:
-                        ewriter.writerow(
-                            (snp,
-                             eqtls[snp]["snp_info"]["chr"],
-                             eqtls[snp]["snp_info"]["locus"],
-                             gene,
-                             eqtls[snp][gene]["gene_chr"],
-                             eqtls[snp][gene]["gene_start"],
-                             eqtls[snp][gene]["gene_end"],
-                             eqtls[snp][gene]["cell_lines"],
-                             eqtls[snp][gene]["cis?"],
-                             eqtls[snp][gene]["p_thresh"],
-                             tissue,
-                             eqtls[snp][gene]["tissues"][tissue]["pvalue"],
-                             eqtls[snp][gene]["tissues"][tissue]["qvalue"],
-                             eqtls[snp][gene]["tissues"][tissue]["effect_size"]))
+            if gene == "snp_info":
+                continue
+            for tissue in eqtls[snp][gene]["tissues"].keys():
+                eqtls[snp][gene]["tissues"][tissue]["qvalue"] \
+                    = adj_p_values[p_values.index(
+                        eqtls[snp][gene]["tissues"][tissue]["pvalue"])]
+                if eqtls[snp][gene]["tissues"][tissue]["qvalue"] < fdr_threshold:
+                    num_sig[snp] += 1
+                if not suppress_intermediate_files:
+                    ewriter.writerow(
+                        (snp,
+                         eqtls[snp]["snp_info"]["chr"],
+                         eqtls[snp]["snp_info"]["locus"],
+                         gene,
+                         eqtls[snp][gene]["gene_chr"],
+                         eqtls[snp][gene]["gene_start"],
+                         eqtls[snp][gene]["gene_end"],
+                         eqtls[snp][gene]["cell_lines"],
+                         eqtls[snp][gene]["cis?"],
+                         eqtls[snp][gene]["p_thresh"],
+                         tissue,
+                         eqtls[snp][gene]["tissues"][tissue]["pvalue"],
+                         eqtls[snp][gene]["tissues"][tissue]["qvalue"],
+                         eqtls[snp][gene]["tissues"][tissue]["effect_size"]))
     return (eqtls, num_sig)
 
 
 def query_local_databases(eqtl_data_dir, genes, eqtls, p_values):
+    """Not used at the moment.
+    """
     print("\tQuerying local databases.")
     num_tests = 0
     for db in os.listdir(
@@ -557,7 +657,9 @@ def query_GTEx_service(
                         reqLists[-1].append({"snpId": snp,
                                              "gencodeId": gene,
                                              "tissueName": tissue})
-                    elif reqLists[-1][-1]["snpId"] == snp and reqLists[-1][-1]["gencodeId"] == gene:
+                    elif reqLists[-1][-1]["snpId"] == snp and \
+                         reqLists[-1][-1]["gencodeId"] == gene:
+                        # Ensure that all tissues of a SNp-gene pair are in same ReqList 
                         reqLists[-1].append({"snpId": snp,
                                              "gencodeId": gene,
                                              "tissueName": tissue})
@@ -588,7 +690,7 @@ def query_GTEx_service(
             failed_requests_file.write(str(failed_requests) + '\n')
     for result in results:
         if (str(result["geneSymbol"]) == "gene not found" or
-                not result["snpId"] in snps.keys() or
+                not result["snpId"] in genes.keys() or
                 result["pvalue"] == "NA"):
             continue
         num_tests += 1
@@ -629,47 +731,47 @@ def process_eqtls(snps, genes, eqtls, gene_database_fp):
     for snp in eqtls.keys():
         eqtls[snp]["snp_info"] = {
             "chr": snps[snp]["chr"],
-            "locus": snps[snp]["locus"]}
+            "locus": snps[snp]["locus"],
+            "fragments": snps[snp]["fragments"]}
         for gene in eqtls[snp].keys():
-            if not gene == "snp_info":
-                gene_chr = "NA"
-                gene_start = "NA"
-                gene_end = "NA"
-                max_length = 0
-                for gene_stat in gene_index.execute(query_str, [gene]):
-                    # Consider "canonical" to be the longest record where
-                    # multiple records are present
-                    if abs(gene_stat[2] - gene_stat[1]) > max_length:
-                        if gene_stat[0].startswith("chr"):
-                            gene_chr = gene_stat[0][gene_stat[0].find(
-                                "chr") + 3:]
-                        else:
-                            gene_chr = gene_stat[0]
-                        gene_start = gene_stat[1]
-                        gene_end = gene_stat[2]
-                        if include_p_thresh:
-                            p_thresh = gene_stat[3]
-                        else:
-                            p_thresh = "NA"
-                        max_length = gene_stat[2] - gene_stat[1]
-                cis = gene_chr == eqtls[snp]["snp_info"]["chr"] and (
-                    eqtls[snp]["snp_info"]["locus"] > gene_start -
-                    1000000 and eqtls[snp]["snp_info"]["locus"] < gene_end +
-                    1000000)  # eQTL is cis if the SNP is within 1Mbp of the gene
-
-                eqtls[snp][gene]["gene_chr"] = gene_chr
-                eqtls[snp][gene]["gene_start"] = gene_start
-                eqtls[snp][gene]["gene_end"] = gene_end
-                try:
-                    eqtls[snp][gene]["cell_lines"] = list(genes[snp][gene])
-                except KeyError:
-                    eqtls[snp][gene]["cell_lines"] = "NA"
-                eqtls[snp][gene]["p_thresh"] = p_thresh
-                if cis:
-                    eqtls[snp][gene]["cis?"] = True
-                else:
-                    eqtls[snp][gene]["cis?"] = False
-
+            if gene == "snp_info":
+                continue
+            gene_chr = "NA"
+            gene_start = "NA"
+            gene_end = "NA"
+            max_length = 0
+            for gene_stat in gene_index.execute(query_str, [gene]):
+                # Consider "canonical" to be the longest record where
+                # multiple records are present
+                if abs(gene_stat[2] - gene_stat[1]) > max_length:
+                    if gene_stat[0].startswith("chr"):
+                        gene_chr = gene_stat[0][gene_stat[0].find(
+                            "chr") + 3:]
+                    else:
+                        gene_chr = gene_stat[0]
+                    gene_start = gene_stat[1]
+                    gene_end = gene_stat[2]
+                    if include_p_thresh:
+                        p_thresh = gene_stat[3]
+                    else:
+                        p_thresh = "NA"
+                    max_length = gene_stat[2] - gene_stat[1]
+            # eQTL is cis if the SNP is within 1Mbp of the gene
+            cis = gene_chr == eqtls[snp]["snp_info"]["chr"] and (
+                (eqtls[snp]["snp_info"]["locus"] > gene_start - 1000000) and
+                (eqtls[snp]["snp_info"]["locus"] < gene_end + 1000000))  
+            eqtls[snp][gene]["gene_chr"] = gene_chr
+            eqtls[snp][gene]["gene_start"] = gene_start
+            eqtls[snp][gene]["gene_end"] = gene_end
+            try:
+                eqtls[snp][gene]["cell_lines"] = list(genes[snp][gene])
+            except KeyError:
+                eqtls[snp][gene]["cell_lines"] = "NA"
+            eqtls[snp][gene]["p_thresh"] = p_thresh
+            if cis:
+                eqtls[snp][gene]["cis?"] = True
+            else:
+                eqtls[snp][gene]["cis?"] = False
 
 def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
     """Posts and receives requests from GTEx 
@@ -680,6 +782,24 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
         reqList: A list of > 950 SNP, gene and tissue JSON data
         gtexResponses: A manager.list() object to handle requests.
 
+    Returns:
+        gtexResponses:
+           [
+              (ReqList:[]
+               {'beta': '0.0832273122097661',
+                'gencodeId': 'ENSG00000137872.11',
+                'geneSymbol': 'SEMA6D',
+                'pvalue': '0.37233196039320215',
+                'pvalueThreshold': None,
+                'se': '0.0929115299234',
+                'snpId': 'rs9462794',
+                'tissueId': 'Prostate',
+                'tstat': '0.8957694731579682',
+                'variantId': '6_12445847_A_T_b37'}
+
+
+             
+           )]
     """
     s = requests.Session()
     s.verify = GTEX_CERT
@@ -837,7 +957,7 @@ def produce_summary(eqtls, expression_table_fp, output_dir):
                         gene_exp[gene]["min"] = gene_df.ix[gene].idxmin()
                         if not isinstance(gene_exp[gene]["min"], str):
                             gene_exp[gene]["min"] = gene_df.ix[gene].min().idxmin()
-                        gene_exp[gene][gene_exp[gene]["min"]]
+                        gene_exp[gene][gene_exp[gene]["min"]] \
                             = gene_df.at[gene, gene_exp[gene]["min"]].max()
                     except KeyError:
                         print("\t\tWarning: No expression information for " +\
@@ -853,17 +973,11 @@ def produce_summary(eqtls, expression_table_fp, output_dir):
                         print("\t\tWarning: No expression information for " +\
                               "%s in %s" % (gene, tissue))
                         gene_exp[gene][tissue] = "NA"
-
-                to_cell_line = ''
-                if eqtls[snp][gene]["cell_lines"] == "NA":
-                    to_cell_line = "NA"
-                else:
-                    for i, cell_line in enumerate(
-                            eqtls[snp][gene]["cell_lines"], start=1):
-                        if not i == len(eqtls[snp][gene]["cell_lines"]):
-                            to_cell_line = cell_line
-                        else:
-                            to_cell_line = cell_line
+                cells = eqtls[snp][gene]["cell_lines"]
+                to_cell_line = cells[0]
+                if len(cells) > 1:
+                    for i in range(1, len(cells)):
+                        to_cell_line += ", " + cells[i]
                 max_gene_exp = ''
                 if gene_exp[gene]["max"] == "NA":
                     max_gene_exp = 'NA'
@@ -1019,7 +1133,9 @@ def produce_overview(genes, eqtls, num_sig, output_dir):
     num_eqtls = []
     rsIDs = []
 
-    chrs = snps_by_chr.keys()
+    chrs = []
+    for c in snps_by_chr.keys():
+        chrs.append(c)
     # So that the chromosomes are in a logical order on the graph
     chrs.sort(key=natural_keys)
     chr_locs = []
@@ -1031,8 +1147,8 @@ def produce_overview(genes, eqtls, num_sig, output_dir):
     for chrm in chrs:
         snp_list = snps_by_chr[chrm]
         snp_list.sort()  # Sort by locus
-        int_colour = int_colours.next()
-        eqtl_colour = eqtl_colours.next()
+        int_colour = next(int_colours)
+        eqtl_colour = next(eqtl_colours)
         chr_locs.append(chrm_pos)
         chr_ticks.append(chrm)
         for snp in snp_list:
@@ -1798,61 +1914,46 @@ def build_eqtl_index(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
-    parser.add_argument(
-        "-i",
-        "--inputs",
-        nargs='+',
-        required=True,
-        help="The the dbSNP IDs or loci of SNPs of interest in the format \"chr<x>:<locus>\"")
-    parser.add_argument(
-        "-c",
-        "--config",
-        default=os.path.join(
-            os.path.dirname(__file__),
-            "../docs/codes3d.conf"),
-        help="The configuration file to be used for this hiCquery run (default: conf.py)")
-    parser.add_argument(
-        "-n",
-        "--include_cell_lines",
-        nargs='+',
-        help="Space-separated list of cell lines to include (others will be ignored). NOTE: Mutually exclusive with EXCLUDE_CELL_LINES.")
-    parser.add_argument(
-        "-x",
-        "--exclude_cell_lines",
-        nargs='+',
-        help="Space-separated list of cell lines to exclude (others will be included). NOTE: Mutually exclusive with INCLUDE_CELL_LINES.")
-    parser.add_argument(
-        "-o",
-        "--output_dir",
-        default="codes3d_output",
-        help="The directory in which to output results (\"hiCquery_output\" by default).")
-    parser.add_argument(
-        "-l",
-        "--local_databases_only",
-        action="store_true",
-        default=False,
-        help="Consider only local databases. Will only include cis-eQTLs if using downloadable GTEx dataset.")
-    parser.add_argument(
-        "-s",
-        "--suppress_intermediate_files",
-        action="store_true",
-        default=False,
-        help="Do not produce intermediate files. These can be used to run the pipeline from an intermediate stage in the event of interruption.")
-    parser.add_argument(
-        "-p",
-        "--num_processes",
-        type=int,
-        default=1,
-        help="Desired number of processes for multithreading (default: 1).")
-    parser.add_argument(
-        "-f",
-        "--fdr_threshold",
-        type=float,
-        default=0.05,
-        help="The FDR threshold to consider an eQTL statistically significant (default: 0.05).")
+    parser.add_argument("-i", "--inputs", nargs='+', required=True,
+        help="The the dbSNP IDs or loci of SNPs of interest in the format " +\
+                        "\"chr<x>:<locus>\"")
+    parser.add_argument("-c", "--config",
+                        default=os.path.join(os.path.dirname(__file__),
+                                             "../docs/codes3d.conf"),
+                        help="The configuration file to be used for this " +\
+                        "hiCquery run (default: conf.py)")
+    parser.add_argument("-n", "--include_cell_lines", nargs='+',
+                        help="Space-separated list of cell lines to include " +\
+                        "(others will be ignored). NOTE: Mutually exclusive " +\
+                        "with EXCLUDE_CELL_LINES.")
+    parser.add_argument("-x", "--exclude_cell_lines", nargs='+',
+                        help="Space-separated list of cell lines to exclude " +\
+                        "(others will be included). NOTE: Mutually exclusive " +\
+                        "with INCLUDE_CELL_LINES.")
+    parser.add_argument("-o", "--output_dir", default="codes3d_output",
+                        help="The directory in which to output results " +\
+                        "(\"hiCquery_output\" by default).")
+    parser.add_argument("-l", "--local_databases_only", action="store_true",
+                        default=False, help="Consider only local databases. " +\
+                        "Will only include cis-eQTLs if using downloadable " +\
+                        "GTEx dataset.")
+    parser.add_argument("-s", "--suppress_intermediate_files", action="store_true",
+                        default=False, help="Do not produce intermediate " +\
+                        "files. These can be used to run the pipeline from " +\
+                        "an intermediate stage in the event of interruption.")
+    parser.add_argument("-p", "--num_processes", type=int, default=1,
+                        help="Desired number of processes for multithreading " +\
+                        "(default: 1).")
+    parser.add_argument("-f", "--fdr_threshold", type=float, default=0.05,
+                        help="The FDR threshold to consider an eQTL " +\
+                        "statistically significant (default: 0.05).")
+    parser.add_argument("-r", "--restriction_enzymes", nargs='+',
+                        help="Space-separated list of  " +\
+                        "restriction enzymes used in HiC data.")
     args = parser.parse_args()
     config = configparser.ConfigParser()
     config.read(args.config)
+    lib_dir = config.get("Defaults", "LIB_DIR")
     snp_database_fp = config.get("Defaults", "SNP_DATABASE_FP")
     hic_data_dir = config.get("Defaults", "HIC_DATA_DIR")
     fragment_bed_fp = config.get("Defaults", "FRAGMENT_BED_FP")
@@ -1862,20 +1963,26 @@ if __name__ == "__main__":
     eqtl_data_dir = config.get("Defaults", "EQTL_DATA_DIR")
     expression_table_fp = config.get("Defaults", "EXPRESSION_TABLE_FP")
     GTEX_CERT = config.get("Defaults", "GTEX_CERT")
+    HIC_RESTRICTION_ENZYMES = [e.strip() for e in config.get(
+        "Defaults", "HIC_RESTRICTION_ENZYMES").split(',')]
+    restriction_enzymes = parse_parameters(args.restriction_enzymes,
+                                          args.include_cell_lines,
+                                          args.exclude_cell_lines)
     if not os.path.isdir(args.output_dir):
         os.makedirs(args.output_dir)
 
-    snps = process_inputs(args.inputs, snp_database_fp, fragment_database_fp,
-                          args.output_dir, args.suppress_intermediate_files)
-    interactions = find_interactions(snps, hic_data_dir, args.include_cell_lines,
+    snps = process_inputs(args.inputs, snp_database_fp, lib_dir,
+                          restriction_enzymes, args.output_dir,
+                          args.suppress_intermediate_files)
+    interactions = find_interactions(snps, lib_dir, args.include_cell_lines,
                                      args.exclude_cell_lines, args.output_dir,
                                      args.suppress_intermediate_files)
-    genes = find_genes(interactions, fragment_database_fp, gene_bed_fp,
+    genes = find_genes(interactions, lib_dir, gene_bed_fp,
                        args.output_dir, args.suppress_intermediate_files)
-    eqtls, num_sig = find_eqtls(snps, genes, eqtl_data_dir, gene_database_fp,
-                                args.fdr_threshold, args.local_databases_only,
-                                args.num_processes, args.output_dir,
-                                suppress_intermediate_files=args.suppress_intermediate_files)
-    produce_summary(eqtls,expression_table_fp,args.output_dir)
-    # produce_overview(genes,eqtls,num_sig,args.output_dir)
+    #eqtls, num_sig = find_eqtls(snps, genes, eqtl_data_dir, gene_database_fp,
+    #                            args.fdr_threshold, args.local_databases_only,
+    #                            args.num_processes, args.output_dir,
+    #                            suppress_intermediate_files=args.suppress_intermediate_files)
+    #produce_summary(eqtls,expression_table_fp,args.output_dir)
+    #produce_overview(genes,eqtls,num_sig,args.output_dir)
     #pathways = retrieve_pathways(eqtls,args.fdr_threshold,args.num_processes,args.output_dir)
