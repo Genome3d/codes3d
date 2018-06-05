@@ -20,10 +20,6 @@ import sqlite3
 import time
 from operator import itemgetter
 import Bio
-#from Bio import Restriction
-#from Bio.Restriction import RestrictionBatch
-#from Bio.Restriction import Restriction_Dictionary
-
 import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
@@ -371,16 +367,18 @@ def find_genes(
     hs_gene_bed = pybedtools.BedTool(gene_bed_fp)
     genes = {}
     for enzyme in interactions.keys():
+        print("\tin libraries restricted with " + enzyme)
         fragment_database_fp = os.path.join(lib_dir, enzyme, 'dna.fragments.db')
         fragment_index_db = sqlite3.connect(fragment_database_fp)
         fragment_index_db.text_factory = str
         fragment_index = fragment_index_db.cursor()
         for snp in interactions[enzyme].keys():
+            print("\t\t"+snp)
                 # Generate BED file of all fragments interacting with
                 # SNP-containing fragment
             for cell_line in interactions[enzyme][snp].keys():
                 snpgenes_exist = False
-                temp_snp_bed = open(output_dir + "/temp_snp_bed.bed", 'w')
+                temp_snp_bed = open(os.path.join(output_dir + "/temp_snp_bed.bed"), 'w')
                 twriter = csv.writer(temp_snp_bed, delimiter = '\t')
                 num_reps = len([rep for rep in os.listdir(
                     os.path.join(lib_dir, enzyme, 'hic_data', cell_line))
@@ -409,7 +407,8 @@ def find_genes(
                     gene_bed = int_bed.intersect(hs_gene_bed, loj=True)
                     for feat in gene_bed:
                         gene_name = feat[6]
-                        if gene_name == '.': # '.' indicates a NULL overlap.
+                        if gene_name == '.' or feat[3] == '.' or \
+                           feat[4] == '-1' or feat[5] == '-1': # '.' indicates a NULL overlap.
                             continue
                         if not gene_name in genes[snp].keys():
                             genes[snp][gene_name] = {}
@@ -817,9 +816,17 @@ def process_eqtls(snps, genes, eqtls, gene_database_fp):
                 eqtls[snp][gene]["cis?"] = True
             else:
                 eqtls[snp][gene]["cis?"] = False
-            hic_score, hic_cells = calc_hic_contacts(genes, snp, gene)
-            eqtls[snp][gene]["hic_score"] = hic_score
-            eqtls[snp][gene]["hic_cells"] = hic_cells
+            try:
+                hic_score, hic_cells = calc_hic_contacts(genes, snp, gene)
+                eqtls[snp][gene]["hic_score"] = hic_score
+                eqtls[snp][gene]["hic_cells"] = hic_cells
+            except KeyError:
+                eqtls[snp][gene]["hic_score"] = "NA"
+                eqtls[snp][gene]["hic_cells"] = "NA"
+            if gene == 'C2orf15':
+                eqtls[snp][gene]["cell_lines"]
+                eqtls[snp][gene]["hic_score"]
+                eqtls[snp][gene]["hic_cells"]
 
             
 def calc_hic_contacts(genes, snp, gene):
@@ -1012,6 +1019,9 @@ def produce_summary(eqtls, expression_table_fp, output_dir):
                    'Min_Expressed_Tissue',
                    'Min_Expression_Level']
     summ_writer.writerow(summ_header)
+    sig_file = open(os.path.join(output_dir, 'significant_eqtls.txt'), 'w')
+    sigwriter = csv.writer(sig_file, delimiter='\t')
+    sigwriter.writerow(summ_header)
     gene_df = pandas.read_table(expression_table_fp, index_col="Description")
     gene_exp = {}  # Cache of already-accessed gene expression data
     all_summary_rows = []  # To produce significant eQTL interactions
@@ -1101,10 +1111,11 @@ def produce_summary(eqtls, expression_table_fp, output_dir):
                     max_gene_exp,
                     gene_exp[gene]["min"],
                     min_gene_exp]
-                all_summary_rows.append(to_summary)
-    summ_writer.writerows(all_summary_rows)
+                summ_writer.writerow(to_summary)
+                if eqtls[snp][gene]["tissues"][tissue]["qvalue"] <= 0.05:
+                    sigwriter.writerow(to_summary)
     summary.close()
-    produce_sig_eqtls(all_summary_rows, summ_header, output_dir)
+    sig_file.close()
 
 
 def compute_adj_pvalues(p_values):
@@ -1131,59 +1142,7 @@ def compute_adj_pvalues(p_values):
         adj_pvalues.append(adj_pval)
     return(p_values, adj_pvalues)
 
-
-def produce_sig_eqtls(all_summary_rows, summ_header, output_dir):
-    """ Writes eQTL interactions that have adjusted p values <= FDR threshold.
-    Args:
-        all_summary_rows: SNP-gene eQTL associations from produce_summary
-        summ_header: Header of columns to be written to file
-        output_dir:
-
-    Writes:
-        sig_eqtls.txt: A file with the ff structure.
-            1. SNP 
-            2. SNP chromosome
-            3. SNP locus
-            4. Gene name
-            5. Gene chromosome
-            6. Gene start 
-            7. Gene end
-            8. Tissue
-            9. p-value
-            10. Adj p-value
-            11. Effect size
-            12. Cell lines 
-            13. GTEx_cis_p_Threshold
-            14. cis_SNP-gene_interaction 
-            15. SNP-gene_Distance
             
-            16. Expression_Level_In_eQTL_Tissue
-            17. Max_Expressed_Tissue
-            18. Maximum_Expression_Level
-            19. Min_Expressed_Tissue
-            20. Min_Expression_Level
-
-        significant_eqtls.text: A file with eQTL associations with 
-            adj_p_values <= FDR threshold. Same structure as summary.txt
-    """
-    fdr = 0.05
-    try:
-        fdr = args.fdr_threshold
-    except BaseException:
-        fdr = 0.05
-    sig_eqtls = []
-    all_summary = sorted(all_summary_rows, key=itemgetter(9))
-    for row in all_summary_rows:
-        if row[9] <= fdr:
-            sig_eqtls.append(row)
-
-    sig_file = open(os.path.join(output_dir, 'significant_eqtls.txt'), 'w')
-    sigwriter = csv.writer(sig_file, delimiter='\t')
-    sigwriter.writerow(summ_header)
-    sigwriter.writerows(sig_eqtls)
-    sig_file.close()
-
-
 def produce_overview(genes, eqtls, num_sig, output_dir):
     """Generates overview graphs and table
 
@@ -1341,7 +1300,7 @@ def retrieve_pathways(eqtls, fdr_threshold, num_processes, output_dir):
 
 
 def get_wikipathways_response(snp, gene, tissue, pwresults):
-    wikipathways = WikipathwaysApiClient()
+    wikipathways = wikipathways_api_client.WikipathwaysApiClient()
     kwargs = {
         'query': gene,
         'organism': 'http://identifiers.org/taxonomy/9606'  # Homo sapiens
@@ -2046,18 +2005,27 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config = configparser.ConfigParser()
     config.read(args.config)
-    lib_dir = config.get("Defaults", "LIB_DIR")
-    snp_database_fp = config.get("Defaults", "SNP_DATABASE_FP")
-    hic_data_dir = config.get("Defaults", "HIC_DATA_DIR")
-    fragment_bed_fp = config.get("Defaults", "FRAGMENT_BED_FP")
-    fragment_database_fp = config.get("Defaults", "FRAGMENT_DATABASE_FP")
-    gene_bed_fp = config.get("Defaults", "GENE_BED_FP")
-    gene_database_fp = config.get("Defaults", "GENE_DATABASE_FP")
-    eqtl_data_dir = config.get("Defaults", "EQTL_DATA_DIR")
-    expression_table_fp = config.get("Defaults", "EXPRESSION_TABLE_FP")
-    GTEX_CERT = config.get("Defaults", "GTEX_CERT")
-    HIC_RESTRICTION_ENZYMES = [e.strip() for e in config.get(
-        "Defaults", "HIC_RESTRICTION_ENZYMES").split(',')]
+    lib_dir = os.path.join(os.path.dirname(__file__),config.get("Defaults", "LIB_DIR"))
+    snp_database_fp = os.path.join(os.path.dirname(__file__),
+                                   config.get("Defaults", "SNP_DATABASE_FP"))
+    hic_data_dir = os.path.join(os.path.dirname(__file__),
+                                config.get("Defaults", "HIC_DATA_DIR"))
+    fragment_bed_fp = os.path.join(os.path.dirname(__file__),
+                                   config.get("Defaults", "FRAGMENT_BED_FP"))
+    fragment_database_fp = os.path.join(os.path.dirname(__file__),
+                                        config.get("Defaults", "FRAGMENT_DATABASE_FP"))
+    gene_bed_fp = os.path.join(os.path.dirname(__file__),
+                               config.get("Defaults", "GENE_BED_FP"))
+    gene_database_fp = os.path.join(os.path.dirname(__file__),
+                                    config.get("Defaults", "GENE_DATABASE_FP"))
+    eqtl_data_dir = os.path.join(os.path.dirname(__file__),
+                                 config.get("Defaults", "EQTL_DATA_DIR"))
+    expression_table_fp = os.path.join(os.path.dirname(__file__),
+                                       config.get("Defaults", "EXPRESSION_TABLE_FP"))
+    GTEX_CERT = os.path.join(os.path.dirname(__file__),
+                             config.get("Defaults", "GTEX_CERT"))
+    HIC_RESTRICTION_ENZYMES = [e.strip() for e in \
+                                config.get("Defaults", "HIC_RESTRICTION_ENZYMES").split(',')]
     restriction_enzymes, include_cell_lines, exclude_cell_lines =\
         parse_parameters(args.restriction_enzymes, \
                          args.include_cell_lines, \
