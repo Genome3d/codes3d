@@ -25,6 +25,7 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 from matplotlib import style
 from matplotlib.ticker import FuncFormatter
+import progressbar
 
 def parse_parameters(restriction_enzymes, include_cell_line, exclude_cell_line):
     """Validate user parameters -r, -n and -x.
@@ -40,7 +41,7 @@ def parse_parameters(restriction_enzymes, include_cell_line, exclude_cell_line):
         include_cells: A list of validated HiC cell lines to be querried.
         exclude_cells: A list of validated HiC cell lines to be excluded.
     """
-    print('Parsing HiC library restriction enzymes...')
+    print('Parsing HiC library restriction enzymes...')        
     res_enzymes = []
     include_cells = []
     exclude_cells = []
@@ -131,7 +132,7 @@ def process_inputs(inputs, snp_database_fp, lib_dir,
     #fragment_index_db = sqlite3.connect(fragment_database_fp)
     #fragment_index_db.text_factory = str
     #fragment_index = fragment_index_db.cursor()
-    snps = {}
+    snps = {}    
     for input in inputs:
         if os.path.isfile(input):
             infile = open(input, 'r')
@@ -248,10 +249,12 @@ def find_interactions(
             {'MboI':{
                 'rs9462794':{  # SNP rsID
                     'GM12878':{  # Cell line
-                        ('6', '30099'), ('6', '31188') #Fragment chr and ID
+                        ('6', '30099'): {
+                            }, 
+                        ('6', '31188'): [replicate1, replicate2] #Fragment chr and ID
                         }
                     'HeLa':{
-                        ('12', '19151'), ('13', '1535')
+                        ('12', '19151'): [replicate1]
                         }
                     }
                 'rs12198798':{..}
@@ -292,7 +295,7 @@ def find_interactions(
                     for fragment in snps[snp]['fragments']:
                         if not fragment['enzyme'] == enzyme:
                             continue
-                        interactions[enzyme][snp][cell_line] = set([])
+                        interactions[enzyme][snp][cell_line] = {}
                         print("\t\t\tFinding interactions for " + snp)
                         for replicate in os.listdir(hic_data_dir + '/' + cell_line):
                             if replicate.endswith(".db"):
@@ -303,14 +306,23 @@ def find_interactions(
                                 print("\t\t\t\tSearching replicate " + replicate)
                                 # Search database for fragments interacting with SNP
                                 # fragment
-                                for interaction in rep_ints.execute(
+                                
+                                from_db = rep_ints.execute(
                                         "SELECT chr2," +
                                         "fragment2 FROM interactions WHERE chr1=?" +
                                         "AND fragment1=?",
                                         [
                                             snps[snp]["chr"],
-                                            fragment["frag"]]):
-                                        interactions[enzyme][snp][cell_line].add(interaction)
+                                            fragment["frag"]])
+                                if from_db:
+                                    #interactions[enzyme][snp][cell_line]['replicates'] += 1
+                                    for interaction in from_db:
+                                        if interaction not in interactions[enzyme][snp][cell_line]\
+                                           .keys():
+                                            interactions[enzyme][snp][cell_line]\
+                                                [interaction] = set([]) 
+                                        interactions[enzyme][snp][cell_line]\
+                                            [interaction].add(replicate)
     if not suppress_intermediate_files:
         intfile = open(output_dir + "/snp-gene_interactions.txt", 'w')
         iwriter = csv.writer(intfile, delimiter='\t')
@@ -319,9 +331,9 @@ def find_interactions(
                 for cell_line in interactions[enzyme][snp].keys():
                     for interaction in interactions[enzyme][snp][cell_line]:
                         iwriter.writerow(
-                            (snp, cell_line, interaction[0], interaction[1], enzyme))
+                            (snp, cell_line, interaction[0], interaction[1],
+                             len(interactions[enzyme][snp][cell_line][interaction]), enzyme))
         intfile.close()
-
     return interactions
 
 
@@ -346,8 +358,8 @@ def find_genes(
                 fragments e.g.
             {'rs9462794':{  # SNP rsID
                 'PHACTR1':{  # Gene
-                    'GM12878_Rao2014': {'interactions': 44, 'replicates': 22},
-                    'KBM7_Rao2014': {'interactions': 9, 'replicates': 5}
+                    'GM12878_Rao2014': {'interactions': 44, 'replicates': 22, 'rep_present': 10},
+                    'KBM7_Rao2014': {'interactions': 9, 'replicates': 5, 'rep_present': 2}
                      }
                 'EDN1':{...}
                 }
@@ -355,13 +367,16 @@ def find_genes(
              'rs6909834':{...}
              }
 
-        If suppress_intermediate_files=False, a snps.txt file is written
-          with the ff columns:
+        If suppress_intermediate_files=False, SNP-gene pairs with HiC contacts
+          in only one libary replicate in only one cell line are written to
+          genes_to_remove.txt.The others interactions are written to genes.txt.
+          Each file has the ff columns:
             1. SNP rsID
             2. Gene name
             3. Cell line 
             4. HiC contact counts
-            5. Number of cell line replicates 
+            5. Number of replicates in which contact is found
+            6. Number of cell line replicates 
     """    
     print("Identifying interactions with genes...")
     hs_gene_bed = pybedtools.BedTool(gene_bed_fp)
@@ -394,7 +409,8 @@ def find_genes(
                             % (interaction[1], interaction[0]))
                         continue
                     for f in fragment_pos:
-                        twriter.writerow(("chr" + interaction[0], f[0], f[1]))
+                        twriter.writerow(("chr" + interaction[0], f[0], f[1],
+                                          interactions[enzyme][snp][cell_line][interaction]))
                     if not snpgenes_exist:
                         snpgenes_exist = True
                 temp_snp_bed.close()
@@ -406,17 +422,24 @@ def find_genes(
                     #    and the number of HiC contacts for each cell line.
                     gene_bed = int_bed.intersect(hs_gene_bed, loj=True)
                     for feat in gene_bed:
-                        gene_name = feat[6]
-                        if gene_name == '.' or feat[3] == '.' or \
-                           feat[4] == '-1' or feat[5] == '-1': # '.' indicates a NULL overlap.
+                        gene_name = feat[7]
+                        if gene_name == '.' or feat[4] == '.' or \
+                           feat[5] == '-1' or feat[6] == '-1': # '.' indicates a NULL overlap.
                             continue
                         if not gene_name in genes[snp].keys():
                             genes[snp][gene_name] = {}
                         if not cell_line in genes[snp][gene_name].keys():
                             genes[snp][gene_name][cell_line] = {}
                             genes[snp][gene_name][cell_line]['interactions'] = 0
+                            genes[snp][gene_name][cell_line]['rep_present'] = []
                         genes[snp][gene_name][cell_line]['interactions'] += 1
                         genes[snp][gene_name][cell_line]['replicates'] = num_reps
+                        rep_present = feat[3].replace('}', '')
+                        rep_present = rep_present.replace('{', '')
+                        rep_present = rep_present.replace("'", "")
+                        rep_present = rep_present.split(',')
+                        rep_present = [e.strip() for e in rep_present]
+                        genes[snp][gene_name][cell_line]['rep_present'] += rep_present
     os.remove(output_dir + "/temp_snp_bed.bed")
     snps_to_remove = {}
     for enzyme in interactions.keys():
@@ -432,6 +455,26 @@ def find_genes(
                 if frag['enzyme'] == enzyme:
                     snps[snp]['fragments'].remove(snps[snp]['fragments'][i])
             del interactions[enzyme][snp]
+    genes_to_remove = []
+    del_genefile = open(os.path.join(output_dir, 'genes_removed.txt'), 'w')
+    dwriter = csv.writer(del_genefile, delimiter = '\t')
+    #dwriter.writerow(('SNP', 'Gene', 'Cell_line', 'Interactions',
+    #                  'Replicates_Present', 'Total_Replicates'))
+    for snp in genes.keys():
+        for gene in genes[snp].keys():
+            num_cell_line = len(genes[snp][gene])
+            for cell_line in genes[snp][gene]:
+                rep_present = len(set(genes[snp][gene][cell_line]['rep_present']))
+                interactions = genes[snp][gene][cell_line]['interactions']
+                replicates = genes[snp][gene][cell_line]['replicates']
+                if interactions/replicates <=1 and rep_present < 2 and\
+                num_cell_line < 2:
+                    genes_to_remove.append((snp,gene))
+                    dwriter.writerow((snp, gene, cell_line, interactions,
+                                     rep_present, replicates))
+    del_genefile.close()
+    for pair in genes_to_remove:
+        del genes[pair[0]][pair[1]]
     if not suppress_intermediate_files:
         genefile = open(output_dir + "/genes.txt", 'w')
         gwriter = csv.writer(genefile, delimiter = '\t')
@@ -440,6 +483,7 @@ def find_genes(
                 for cell_line in genes[snp][gene]:
                     gwriter.writerow((snp, gene, cell_line,
                                       genes[snp][gene][cell_line]['interactions'],
+                                      genes[snp][gene][cell_line]['rep_present'],
                                       genes[snp][gene][cell_line]['replicates']))
     return genes
 
@@ -762,6 +806,7 @@ def process_eqtls(snps, genes, eqtls, gene_database_fp):
             further  maps to a list of tissues in which these eQTLs occur
         gene_database_fp: ../../gene_reference.db
     """
+    print('Processing eQTLs...')
     gene_index_db = sqlite3.connect(gene_database_fp)
     gene_index_db.text_factory = str
     gene_index = gene_index_db.cursor()
@@ -772,6 +817,8 @@ def process_eqtls(snps, genes, eqtls, gene_database_fp):
         query_str = "SELECT chr, start, end, p_thresh FROM genes WHERE symbol=?"
     else:
         query_str = "SELECT chr, start, end FROM genes WHERE symbol=?"
+    bar = progressbar.ProgressBar(max_value=100)
+    i = 0
     for snp in eqtls.keys():
         eqtls[snp]["snp_info"] = {
             "chr": snps[snp]["chr"],
@@ -828,7 +875,10 @@ def process_eqtls(snps, genes, eqtls, gene_database_fp):
                 eqtls[snp][gene]["hic_score"]
                 eqtls[snp][gene]["hic_cells"]
 
-            
+        i += 1
+        bar.update(i*100/len(eqtls))
+
+    
 def calc_hic_contacts(genes, snp, gene):
     """Calculates score of HiC coontacts between SNP and gene.
     
@@ -991,7 +1041,7 @@ def produce_summary(eqtls, expression_table_fp, output_dir):
             adj_p_values <= FDR threshold. Same structure as summary.txt
     """
     # TODO: Tidy up this method using pandas @Cam
-    print("Producing output...")
+    print("\nProducing output...")
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
     summary = open(output_dir + "/summary.txt", 'w')
@@ -1022,101 +1072,124 @@ def produce_summary(eqtls, expression_table_fp, output_dir):
     sig_file = open(os.path.join(output_dir, 'significant_eqtls.txt'), 'w')
     sigwriter = csv.writer(sig_file, delimiter='\t')
     sigwriter.writerow(summ_header)
-    gene_df = pandas.read_table(expression_table_fp, index_col="Description")
-    gene_exp = {}  # Cache of already-accessed gene expression data
     all_summary_rows = []  # To produce significant eQTL interactions
+    manager = multiprocessing.Manager()
+    procPool = multiprocessing.Pool(processes=4)
+    pwresults = manager.list()
+    results = {'summary': [], 'significant': []}
+    bar = progressbar.ProgressBar(max_value=100)
+    i = 0
     for snp in eqtls.keys():
-        for gene in eqtls[snp].keys():
-            if gene == "snp_info":
-                continue
-            distance_from_snp = 0
-            if(eqtls[snp][gene]["gene_chr"] == "NA"):
-                distance_from_snp = "NA"  # If gene location information is missing
-            elif(not eqtls[snp]["snp_info"]["chr"] == eqtls[snp][gene]["gene_chr"]):
-                distance_from_snp = "NA"  # Not applicable to trans interactions
-            elif(eqtls[snp]["snp_info"]["locus"] < eqtls[snp][gene]["gene_start"]):
-                distance_from_snp = eqtls[snp][gene]["gene_start"] - \
-                    eqtls[snp]["snp_info"]["locus"]
-            elif(eqtls[snp]["snp_info"]["locus"] > eqtls[snp][gene]["gene_end"]):
-                distance_from_snp = eqtls[snp]["snp_info"]["locus"] - \
-                    eqtls[snp][gene]["gene_end"]
-            for tissue in eqtls[snp][gene]["tissues"].keys():
-                if not gene in gene_exp.keys():
-                    gene_exp[gene] = {}
-                    try:
-                        # Allow for the fact that there may be more than
-                        # one entry in the gene expression table for each
-                        # gene
-                        gene_exp[gene][tissue] = gene_df.at[gene,
-                                                            tissue].max()
-                        gene_exp[gene]["max"] = gene_df.ix[gene].idxmax()
-                        if not isinstance(gene_exp[gene]["max"], str):
-                            gene_exp[gene]["max"] = gene_df.ix[gene].max().idxmax()
-                        gene_exp[gene][gene_exp[gene]["max"]
-                        ] = gene_df.at[gene, gene_exp[gene]["max"]].max()
-                        gene_exp[gene]["min"] = gene_df.ix[gene].idxmin()
-                        if not isinstance(gene_exp[gene]["min"], str):
-                            gene_exp[gene]["min"] = gene_df.ix[gene].min().idxmin()
-                        gene_exp[gene][gene_exp[gene]["min"]] \
-                            = gene_df.at[gene, gene_exp[gene]["min"]].max()
-                    except KeyError:
-                        print("\t\tWarning: No expression information for " +\
-                              "%s in %s" % (gene, tissue))
-                        gene_exp[gene]["max"] = "NA"
-                        gene_exp[gene]["min"] = "NA"
-                        gene_exp[gene][tissue] = "NA"
-                if not tissue in gene_exp[gene].keys():
-                    try:
-                        gene_exp[gene][tissue] = gene_df.at[gene,
-                                                            tissue].max()
-                    except KeyError:
-                        print("\t\tWarning: No expression information for " +\
-                              "%s in %s" % (gene, tissue))
-                        gene_exp[gene][tissue] = "NA"
-                cells = eqtls[snp][gene]["cell_lines"]
-                to_cell_line = cells[0]
-                if len(cells) > 1:
-                    for i in range(1, len(cells)):
-                        to_cell_line += ", " + cells[i]
-                max_gene_exp = ''
-                if gene_exp[gene]["max"] == "NA":
-                    max_gene_exp = 'NA'
-                else:
-                    max_gene_exp = gene_exp[gene][gene_exp[gene]["max"]]
-                    min_gene_exp = ''
-                if gene_exp[gene]["min"] == "NA":
-                    min_gene_exp = 'NA'
-                else:
-                    min_gene_exp = gene_exp[gene][gene_exp[gene]["min"]]
-                to_summary = [
-                    snp,
-                    eqtls[snp]["snp_info"]["chr"],
-                    eqtls[snp]["snp_info"]["locus"],
-                    gene,
-                    eqtls[snp][gene]["gene_chr"],
-                    eqtls[snp][gene]["gene_start"],
-                    eqtls[snp][gene]["gene_end"],
-                    tissue,
-                    eqtls[snp][gene]["tissues"][tissue]["pvalue"],
-                    eqtls[snp][gene]["tissues"][tissue]["qvalue"],
-                    eqtls[snp][gene]["tissues"][tissue]["effect_size"],
-                    to_cell_line,
-                    eqtls[snp][gene]["hic_cells"],
-                    eqtls[snp][gene]["hic_score"],
-                    eqtls[snp][gene]["p_thresh"],
-                    eqtls[snp][gene]["cis?"],
-                    distance_from_snp,
-                    gene_exp[gene][tissue],
-                    gene_exp[gene]["max"],
-                    max_gene_exp,
-                    gene_exp[gene]["min"],
-                    min_gene_exp]
-                summ_writer.writerow(to_summary)
-                if eqtls[snp][gene]["tissues"][tissue]["qvalue"] <= 0.05:
-                    sigwriter.writerow(to_summary)
+        procPool.apply_async(process_summary, [snp, eqtls, results, pwresults])
+        i += 1
+        bar.update(int(i*100/len(eqtls.keys())))
+    procPool.close()
+    procPool.join()
+    mbar = progressbar.ProgressBar(max_value=100)
+    i = 0
+    print('pwresults')
+    for snp in pwresults:
+        for summ in snp[1]['summary']:
+           summ_writer.writerow(summ)
+        for sig in snp[1]['significant']:
+            sigwriter.writerow(sig)
+        i += 1
+        mbar.update(i*100/len(pwresults))
     summary.close()
     sig_file.close()
-
+    
+def process_summary(snp, eqtls, results, pwresults):
+    gene_df = pandas.read_table(expression_table_fp, index_col="Description")
+    gene_exp = {}  # Cache of already-accessed gene expression data
+    for gene in eqtls[snp].keys():
+        if gene == "snp_info":
+            continue
+        distance_from_snp = 0
+        if(eqtls[snp][gene]["gene_chr"] == "NA"):
+            distance_from_snp = "NA"  # If gene location information is missing
+        elif(not eqtls[snp]["snp_info"]["chr"] == eqtls[snp][gene]["gene_chr"]):
+            distance_from_snp = "NA"  # Not applicable to trans interactions
+        elif(eqtls[snp]["snp_info"]["locus"] < eqtls[snp][gene]["gene_start"]):
+            distance_from_snp = eqtls[snp][gene]["gene_start"] - \
+                eqtls[snp]["snp_info"]["locus"]
+        elif(eqtls[snp]["snp_info"]["locus"] > eqtls[snp][gene]["gene_end"]):
+            distance_from_snp = eqtls[snp]["snp_info"]["locus"] - \
+                eqtls[snp][gene]["gene_end"]
+        for tissue in eqtls[snp][gene]["tissues"].keys():
+            if not gene in gene_exp.keys():
+                gene_exp[gene] = {}
+                try:
+                    # Allow for the fact that there may be more than
+                    # one entry in the gene expression table for each
+                    # gene
+                    gene_exp[gene][tissue] = gene_df.at[gene,
+                                                        tissue].max()
+                    gene_exp[gene]["max"] = gene_df.ix[gene].idxmax()
+                    if not isinstance(gene_exp[gene]["max"], str):
+                        gene_exp[gene]["max"] = gene_df.ix[gene].max().idxmax()
+                    gene_exp[gene][gene_exp[gene]["max"]
+                    ] = gene_df.at[gene, gene_exp[gene]["max"]].max()
+                    gene_exp[gene]["min"] = gene_df.ix[gene].idxmin()
+                    if not isinstance(gene_exp[gene]["min"], str):
+                        gene_exp[gene]["min"] = gene_df.ix[gene].min().idxmin()
+                    gene_exp[gene][gene_exp[gene]["min"]] \
+                        = gene_df.at[gene, gene_exp[gene]["min"]].max()
+                except KeyError:
+                    print("\t\tWarning: No expression information for " +\
+                          "%s in %s" % (gene, tissue))
+                    gene_exp[gene]["max"] = "NA"
+                    gene_exp[gene]["min"] = "NA"
+                    gene_exp[gene][tissue] = "NA"
+            if not tissue in gene_exp[gene].keys():
+                try:
+                    gene_exp[gene][tissue] = gene_df.at[gene,
+                                                        tissue].max()
+                except KeyError:
+                    print("\t\tWarning: No expression information for " +\
+                          "%s in %s" % (gene, tissue))
+                    gene_exp[gene][tissue] = "NA"
+            cells = eqtls[snp][gene]["cell_lines"]
+            to_cell_line = cells[0]
+            if len(cells) > 1:
+                for i in range(1, len(cells)):
+                    to_cell_line += ", " + cells[i]
+            max_gene_exp = ''
+            if gene_exp[gene]["max"] == "NA":
+                max_gene_exp = 'NA'
+            else:
+                max_gene_exp = gene_exp[gene][gene_exp[gene]["max"]]
+                min_gene_exp = ''
+            if gene_exp[gene]["min"] == "NA":
+                min_gene_exp = 'NA'
+            else:
+                min_gene_exp = gene_exp[gene][gene_exp[gene]["min"]]
+            to_summary = [
+                snp,
+                eqtls[snp]["snp_info"]["chr"],
+                eqtls[snp]["snp_info"]["locus"],
+                gene,
+                eqtls[snp][gene]["gene_chr"],
+                eqtls[snp][gene]["gene_start"],
+                eqtls[snp][gene]["gene_end"],
+                tissue,
+                eqtls[snp][gene]["tissues"][tissue]["pvalue"],
+                eqtls[snp][gene]["tissues"][tissue]["qvalue"],
+                eqtls[snp][gene]["tissues"][tissue]["effect_size"],
+                to_cell_line,
+                eqtls[snp][gene]["hic_cells"],
+                eqtls[snp][gene]["hic_score"],
+                eqtls[snp][gene]["p_thresh"],
+                eqtls[snp][gene]["cis?"],
+                distance_from_snp,
+                gene_exp[gene][tissue],
+                gene_exp[gene]["max"],
+                max_gene_exp,
+                gene_exp[gene]["min"],
+                min_gene_exp]
+            results['summary'].append(to_summary)
+            if eqtls[snp][gene]["tissues"][tissue]["qvalue"] <= 0.05:
+                results['significant'].append(to_summary)
+    pwresults.append((snp, results))
 
 def compute_adj_pvalues(p_values):
     """ A Benjamini-Hochberg adjustment of p values of SNP-gene eQTL 
@@ -1147,7 +1220,7 @@ def produce_overview(genes, eqtls, num_sig, output_dir):
     """Generates overview graphs and table
 
     """
-    print("Producing overview...")
+    print("\nProducing overview...")
     stat_table = open(output_dir + "/overview.txt", 'w')
     stat_table.write(
         "SNP\tChromosome\tLocus\tTotal_SNP-gene_Pairs\tTotal_eQTLs\n")
