@@ -1,2 +1,0 @@
-SNP	Chromosome	Locus	Total_SNP-gene_Pairs	Total_eQTLs
-rs4402960	3	185511686	84	2
