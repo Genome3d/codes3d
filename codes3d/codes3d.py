@@ -1087,7 +1087,6 @@ def produce_summary(eqtls, expression_table_fp, output_dir):
     procPool.join()
     mbar = progressbar.ProgressBar(max_value=100)
     i = 0
-    print('pwresults')
     for snp in pwresults:
         for summ in snp[1]['summary']:
            summ_writer.writerow(summ)
