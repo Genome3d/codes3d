@@ -1,0 +1,1 @@
+{'snpId': 'rs4402960', 'tissueName': 'Nerve_Tibial', 'gencodeId': u'RP11-384J4.2'}

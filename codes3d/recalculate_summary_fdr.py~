@@ -1,0 +1,14 @@
+#!/usr/bin/python
+
+import sys
+import csv
+import argparse
+
+
+
+if __name__=='__main__':
+    parser = argparse.ArgumentParser(description = '')
+    parser.add_argument('-s', '--summary_file', required=True, help='CoDeS3D output summary.txt')
+    parser.add_argument('-s', '--summary_file', required=True, help='CoDeS3D eqtls.txt')
+    args = parser.parser_args()
+    
