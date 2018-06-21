@@ -1,1 +1,0 @@
-WikiPathways_ID	Pathway_Name	Gene_Symbol	SNP	Tissue
