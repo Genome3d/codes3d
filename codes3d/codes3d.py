@@ -458,8 +458,6 @@ def find_genes(
     genes_to_remove = []
     del_genefile = open(os.path.join(output_dir, 'genes_removed.txt'), 'w')
     dwriter = csv.writer(del_genefile, delimiter = '\t')
-    #dwriter.writerow(('SNP', 'Gene', 'Cell_line', 'Interactions',
-    #                  'Replicates_Present', 'Total_Replicates'))
     for snp in genes.keys():
         for gene in genes[snp].keys():
             num_cell_line = len(genes[snp][gene])
@@ -728,8 +726,8 @@ def query_GTEx_service(
                    "Uterus",
                    "Vagina",
                    "Whole_Blood"])
-    if num_processes > 10:
-        num_processes = 10
+    if num_processes > 2 : # Ensure GTEx is not 'flooded' with requests 
+        num_processes = 2
     manager = multiprocessing.Manager()
     num_tests = 0
     reqLists = [[]]
@@ -817,8 +815,6 @@ def process_eqtls(snps, genes, eqtls, gene_database_fp):
         query_str = "SELECT chr, start, end, p_thresh FROM genes WHERE symbol=?"
     else:
         query_str = "SELECT chr, start, end FROM genes WHERE symbol=?"
-    bar = progressbar.ProgressBar(max_value=100)
-    i = 0
     for snp in eqtls.keys():
         eqtls[snp]["snp_info"] = {
             "chr": snps[snp]["chr"],
@@ -870,15 +866,8 @@ def process_eqtls(snps, genes, eqtls, gene_database_fp):
             except KeyError:
                 eqtls[snp][gene]["hic_score"] = "NA"
                 eqtls[snp][gene]["hic_cells"] = "NA"
-            if gene == 'C2orf15':
-                eqtls[snp][gene]["cell_lines"]
-                eqtls[snp][gene]["hic_score"]
-                eqtls[snp][gene]["hic_cells"]
 
-        i += 1
-        bar.update(i*100/len(eqtls))
-
-    
+                
 def calc_hic_contacts(genes, snp, gene):
     """Calculates score of HiC coontacts between SNP and gene.
     
@@ -1005,7 +994,7 @@ def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
         "/gene_expression_table.txt",
         sep='\t')
 
-def produce_summary(eqtls, expression_table_fp, output_dir):
+def produce_summary(eqtls, expression_table_fp, num_processes, output_dir):
     """Write final results of eQTL-eGene associations
 
     Args:
@@ -1074,15 +1063,11 @@ def produce_summary(eqtls, expression_table_fp, output_dir):
     sigwriter.writerow(summ_header)
     all_summary_rows = []  # To produce significant eQTL interactions
     manager = multiprocessing.Manager()
-    procPool = multiprocessing.Pool(processes=4)
+    procPool = multiprocessing.Pool(processes=num_processes)
     pwresults = manager.list()
     results = {'summary': [], 'significant': []}
-    bar = progressbar.ProgressBar(max_value=100)
-    i = 0
     for snp in eqtls.keys():
         procPool.apply_async(process_summary, [snp, eqtls, results, pwresults])
-        i += 1
-        bar.update(int(i*100/len(eqtls.keys())))
     procPool.close()
     procPool.join()
     mbar = progressbar.ProgressBar(max_value=100)
@@ -2116,6 +2101,6 @@ if __name__ == "__main__":
                                 args.fdr_threshold, args.local_databases_only,
                                 args.num_processes, args.output_dir,
                                 suppress_intermediate_files=args.suppress_intermediate_files)
-    produce_summary(eqtls,expression_table_fp,args.output_dir)
+    produce_summary(eqtls,expression_table_fp, args.num_processes, args.output_dir)
     produce_overview(genes,eqtls,num_sig,args.output_dir)
     pathways = retrieve_pathways(eqtls,args.fdr_threshold,args.num_processes,args.output_dir)
