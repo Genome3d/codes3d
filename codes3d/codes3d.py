@@ -579,13 +579,23 @@ def find_eqtls(
                                         p_values,
                                         num_processes,
                                         output_dir)
-    process_eqtls(snps, genes, eqtls, gene_database_fp)
+    manager = multiprocessing.Manager()
+    processed_eqtls = manager.list()
+    procPool = multiprocessing.Pool(processes=num_processes)
+    for snp in eqtls.keys():
+        procPool.apply_async(
+            process_eqtls, (snp, snps, genes, eqtls[snp], gene_database_fp, processed_eqtls))
+    procPool.close()
+    procPool.join()
+    for row in processed_eqtls:
+        eqtls[row[0]] = row[1]
     eqtlfile = None
     p_values, adj_p_values = compute_adj_pvalues(p_values)
     if not suppress_intermediate_files:
         eqtlfile = open(output_dir + '/eqtls.txt', 'w')
         ewriter = csv.writer(eqtlfile, delimiter = '\t')
     for snp in eqtls.keys():
+        print(eqtls[snp].keys())
         num_sig[snp] = 0
         for gene in eqtls[snp].keys():
             if gene == "snp_info":
@@ -794,7 +804,7 @@ def query_GTEx_service(
     return num_tests
 
 
-def process_eqtls(snps, genes, eqtls, gene_database_fp):
+def process_eqtls(snp, snps, genes, snp_data, gene_database_fp, processed_eqtls):
     """Formats the eqtls dict.
 
     Args:
@@ -815,57 +825,58 @@ def process_eqtls(snps, genes, eqtls, gene_database_fp):
         query_str = "SELECT chr, start, end, p_thresh FROM genes WHERE symbol=?"
     else:
         query_str = "SELECT chr, start, end FROM genes WHERE symbol=?"
-    for snp in eqtls.keys():
-        eqtls[snp]["snp_info"] = {
-            "chr": snps[snp]["chr"],
-            "locus": snps[snp]["locus"],
-            "fragments": snps[snp]["fragments"]}
-        for gene in eqtls[snp].keys():
-            if gene == "snp_info":
-                continue
-            gene_chr = "NA"
-            gene_start = "NA"
-            gene_end = "NA"
-            max_length = 0
-            for gene_stat in gene_index.execute(query_str, [gene]):
-                # Consider "canonical" to be the longest record where
-                # multiple records are present
-                if abs(gene_stat[2] - gene_stat[1]) > max_length:
-                    if gene_stat[0].startswith("chr"):
-                        gene_chr = gene_stat[0][gene_stat[0].find(
-                            "chr") + 3:]
-                    else:
-                        gene_chr = gene_stat[0]
-                    gene_start = gene_stat[1]
-                    gene_end = gene_stat[2]
-                    if include_p_thresh:
-                        p_thresh = gene_stat[3]
-                    else:
-                        p_thresh = "NA"
-                    max_length = gene_stat[2] - gene_stat[1]
-            # eQTL is cis if the SNP is within 1Mbp of the gene
-            cis = gene_chr == eqtls[snp]["snp_info"]["chr"] and (
-                (eqtls[snp]["snp_info"]["locus"] > gene_start - 1000000) and
-                (eqtls[snp]["snp_info"]["locus"] < gene_end + 1000000))  
-            eqtls[snp][gene]["gene_chr"] = gene_chr
-            eqtls[snp][gene]["gene_start"] = gene_start
-            eqtls[snp][gene]["gene_end"] = gene_end
-            try:
-                eqtls[snp][gene]["cell_lines"] = list(genes[snp][gene])
-            except KeyError:
-                eqtls[snp][gene]["cell_lines"] = "NA"
-            eqtls[snp][gene]["p_thresh"] = p_thresh
-            if cis:
-                eqtls[snp][gene]["cis?"] = True
-            else:
-                eqtls[snp][gene]["cis?"] = False
-            try:
-                hic_score, hic_cells = calc_hic_contacts(genes, snp, gene)
-                eqtls[snp][gene]["hic_score"] = hic_score
-                eqtls[snp][gene]["hic_cells"] = hic_cells
-            except KeyError:
-                eqtls[snp][gene]["hic_score"] = "NA"
-                eqtls[snp][gene]["hic_cells"] = "NA"
+    snp_info = {
+        "chr": snps[snp]["chr"],
+        "locus": snps[snp]["locus"],
+        "fragments": snps[snp]["fragments"]}
+    snp_data.update({"snp_info": snp_info})
+    for gene in snp_data.keys():
+        if gene == "snp_info":
+            continue
+        gene_chr = "NA"
+        gene_start = "NA"
+        gene_end = "NA"
+        max_length = 0
+        for gene_stat in gene_index.execute(query_str, [gene]):
+            # Consider "canonical" to be the longest record where
+            # multiple records are present
+            if abs(gene_stat[2] - gene_stat[1]) > max_length:
+                if gene_stat[0].startswith("chr"):
+                    gene_chr = gene_stat[0][gene_stat[0].find(
+                        "chr") + 3:]
+                else:
+                    gene_chr = gene_stat[0]
+                gene_start = gene_stat[1]
+                gene_end = gene_stat[2]
+                if include_p_thresh:
+                    p_thresh = gene_stat[3]
+                else:
+                    p_thresh = "NA"
+                max_length = gene_stat[2] - gene_stat[1]
+        # eQTL is cis if the SNP is within 1Mbp of the gene
+        cis = gene_chr == snp_data["snp_info"]["chr"] and (
+            (snp_data["snp_info"]["locus"] > gene_start - 1000000) and
+            (snp_data["snp_info"]["locus"] < gene_end + 1000000))  
+        snp_data[gene]["gene_chr"] = gene_chr
+        snp_data[gene]["gene_start"] = gene_start
+        snp_data[gene]["gene_end"] = gene_end
+        try:
+            snp_data[gene]["cell_lines"] = list(genes[snp][gene])
+        except KeyError:
+            snp_data[gene]["cell_lines"] = "NA"
+        snp_data[gene]["p_thresh"] = p_thresh
+        if cis:
+            snp_data[gene]["cis?"] = True
+        else:
+            snp_data[gene]["cis?"] = False
+        try:
+            hic_score, hic_cells = calc_hic_contacts(genes, snp, gene)
+            snp_data[gene]["hic_score"] = hic_score
+            snp_data[gene]["hic_cells"] = hic_cells
+        except KeyError:
+            snp_data[gene]["hic_score"] = "NA"
+            snp_data[gene]["hic_cells"] = "NA"
+    processed_eqtls.append((snp, snp_data))
 
                 
 def calc_hic_contacts(genes, snp, gene):
