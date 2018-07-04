@@ -446,8 +446,8 @@ def find_genes(
         snps_to_remove[enzyme] = []
         for snp in interactions[enzyme].keys():
             if not snp in genes.keys():
-                print("\tNo SNP-gene spatial interactions detected for %s, " + \
-                      "removing from analysis" % (snp,))
+		print("\tNo SNP-gene spatial interactions detected for %s, \
+                      removing from analysis" % (snp,))
                 snps_to_remove[enzyme].append(snp)
     for enzyme in snps_to_remove.keys(): #Update snps and interactions mappings.
         for snp in snps_to_remove[enzyme]:
