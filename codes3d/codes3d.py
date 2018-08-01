@@ -446,8 +446,8 @@ def find_genes(
         snps_to_remove[enzyme] = []
         for snp in interactions[enzyme].keys():
             if not snp in genes.keys():
-                print("\tNo SNP-gene spatial interactions detected for %s, " + \
-                      "removing from analysis" % (snp,))
+		print("\tNo SNP-gene spatial interactions detected for %s, \
+                      removing from analysis" % (snp,))
                 snps_to_remove[enzyme].append(snp)
     for enzyme in snps_to_remove.keys(): #Update snps and interactions mappings.
         for snp in snps_to_remove[enzyme]:
@@ -458,8 +458,6 @@ def find_genes(
     genes_to_remove = []
     del_genefile = open(os.path.join(output_dir, 'genes_removed.txt'), 'w')
     dwriter = csv.writer(del_genefile, delimiter = '\t')
-    #dwriter.writerow(('SNP', 'Gene', 'Cell_line', 'Interactions',
-    #                  'Replicates_Present', 'Total_Replicates'))
     for snp in genes.keys():
         for gene in genes[snp].keys():
             num_cell_line = len(genes[snp][gene])
@@ -581,13 +579,23 @@ def find_eqtls(
                                         p_values,
                                         num_processes,
                                         output_dir)
-    process_eqtls(snps, genes, eqtls, gene_database_fp)
+    manager = multiprocessing.Manager()
+    processed_eqtls = manager.list()
+    procPool = multiprocessing.Pool(processes=num_processes)
+    for snp in eqtls.keys():
+        procPool.apply_async(
+            process_eqtls, (snp, snps, genes, eqtls[snp], gene_database_fp, processed_eqtls))
+    procPool.close()
+    procPool.join()
+    for row in processed_eqtls:
+        eqtls[row[0]] = row[1]
     eqtlfile = None
     p_values, adj_p_values = compute_adj_pvalues(p_values)
     if not suppress_intermediate_files:
         eqtlfile = open(output_dir + '/eqtls.txt', 'w')
         ewriter = csv.writer(eqtlfile, delimiter = '\t')
     for snp in eqtls.keys():
+        print(eqtls[snp].keys())
         num_sig[snp] = 0
         for gene in eqtls[snp].keys():
             if gene == "snp_info":
@@ -728,8 +736,8 @@ def query_GTEx_service(
                    "Uterus",
                    "Vagina",
                    "Whole_Blood"])
-    if num_processes > 10:
-        num_processes = 10
+    if num_processes > 2 : # Ensure GTEx is not 'flooded' with requests 
+        num_processes = 2
     manager = multiprocessing.Manager()
     num_tests = 0
     reqLists = [[]]
@@ -796,7 +804,7 @@ def query_GTEx_service(
     return num_tests
 
 
-def process_eqtls(snps, genes, eqtls, gene_database_fp):
+def process_eqtls(snp, snps, genes, snp_data, gene_database_fp, processed_eqtls):
     """Formats the eqtls dict.
 
     Args:
@@ -817,68 +825,60 @@ def process_eqtls(snps, genes, eqtls, gene_database_fp):
         query_str = "SELECT chr, start, end, p_thresh FROM genes WHERE symbol=?"
     else:
         query_str = "SELECT chr, start, end FROM genes WHERE symbol=?"
-    bar = progressbar.ProgressBar(max_value=100)
-    i = 0
-    for snp in eqtls.keys():
-        eqtls[snp]["snp_info"] = {
-            "chr": snps[snp]["chr"],
-            "locus": snps[snp]["locus"],
-            "fragments": snps[snp]["fragments"]}
-        for gene in eqtls[snp].keys():
-            if gene == "snp_info":
-                continue
-            gene_chr = "NA"
-            gene_start = "NA"
-            gene_end = "NA"
-            max_length = 0
-            for gene_stat in gene_index.execute(query_str, [gene]):
-                # Consider "canonical" to be the longest record where
-                # multiple records are present
-                if abs(gene_stat[2] - gene_stat[1]) > max_length:
-                    if gene_stat[0].startswith("chr"):
-                        gene_chr = gene_stat[0][gene_stat[0].find(
-                            "chr") + 3:]
-                    else:
-                        gene_chr = gene_stat[0]
-                    gene_start = gene_stat[1]
-                    gene_end = gene_stat[2]
-                    if include_p_thresh:
-                        p_thresh = gene_stat[3]
-                    else:
-                        p_thresh = "NA"
-                    max_length = gene_stat[2] - gene_stat[1]
-            # eQTL is cis if the SNP is within 1Mbp of the gene
-            cis = gene_chr == eqtls[snp]["snp_info"]["chr"] and (
-                (eqtls[snp]["snp_info"]["locus"] > gene_start - 1000000) and
-                (eqtls[snp]["snp_info"]["locus"] < gene_end + 1000000))  
-            eqtls[snp][gene]["gene_chr"] = gene_chr
-            eqtls[snp][gene]["gene_start"] = gene_start
-            eqtls[snp][gene]["gene_end"] = gene_end
-            try:
-                eqtls[snp][gene]["cell_lines"] = list(genes[snp][gene])
-            except KeyError:
-                eqtls[snp][gene]["cell_lines"] = "NA"
-            eqtls[snp][gene]["p_thresh"] = p_thresh
-            if cis:
-                eqtls[snp][gene]["cis?"] = True
-            else:
-                eqtls[snp][gene]["cis?"] = False
-            try:
-                hic_score, hic_cells = calc_hic_contacts(genes, snp, gene)
-                eqtls[snp][gene]["hic_score"] = hic_score
-                eqtls[snp][gene]["hic_cells"] = hic_cells
-            except KeyError:
-                eqtls[snp][gene]["hic_score"] = "NA"
-                eqtls[snp][gene]["hic_cells"] = "NA"
-            if gene == 'C2orf15':
-                eqtls[snp][gene]["cell_lines"]
-                eqtls[snp][gene]["hic_score"]
-                eqtls[snp][gene]["hic_cells"]
+    snp_info = {
+        "chr": snps[snp]["chr"],
+        "locus": snps[snp]["locus"],
+        "fragments": snps[snp]["fragments"]}
+    snp_data.update({"snp_info": snp_info})
+    for gene in snp_data.keys():
+        if gene == "snp_info":
+            continue
+        gene_chr = "NA"
+        gene_start = "NA"
+        gene_end = "NA"
+        max_length = 0
+        for gene_stat in gene_index.execute(query_str, [gene]):
+            # Consider "canonical" to be the longest record where
+            # multiple records are present
+            if abs(gene_stat[2] - gene_stat[1]) > max_length:
+                if gene_stat[0].startswith("chr"):
+                    gene_chr = gene_stat[0][gene_stat[0].find(
+                        "chr") + 3:]
+                else:
+                    gene_chr = gene_stat[0]
+                gene_start = gene_stat[1]
+                gene_end = gene_stat[2]
+                if include_p_thresh:
+                    p_thresh = gene_stat[3]
+                else:
+                    p_thresh = "NA"
+                max_length = gene_stat[2] - gene_stat[1]
+        # eQTL is cis if the SNP is within 1Mbp of the gene
+        cis = gene_chr == snp_data["snp_info"]["chr"] and (
+            (snp_data["snp_info"]["locus"] > gene_start - 1000000) and
+            (snp_data["snp_info"]["locus"] < gene_end + 1000000))  
+        snp_data[gene]["gene_chr"] = gene_chr
+        snp_data[gene]["gene_start"] = gene_start
+        snp_data[gene]["gene_end"] = gene_end
+        try:
+            snp_data[gene]["cell_lines"] = list(genes[snp][gene])
+        except KeyError:
+            snp_data[gene]["cell_lines"] = "NA"
+        snp_data[gene]["p_thresh"] = p_thresh
+        if cis:
+            snp_data[gene]["cis?"] = True
+        else:
+            snp_data[gene]["cis?"] = False
+        try:
+            hic_score, hic_cells = calc_hic_contacts(genes, snp, gene)
+            snp_data[gene]["hic_score"] = hic_score
+            snp_data[gene]["hic_cells"] = hic_cells
+        except KeyError:
+            snp_data[gene]["hic_score"] = "NA"
+            snp_data[gene]["hic_cells"] = "NA"
+    processed_eqtls.append((snp, snp_data))
 
-        i += 1
-        bar.update(i*100/len(eqtls))
-
-    
+                
 def calc_hic_contacts(genes, snp, gene):
     """Calculates score of HiC coontacts between SNP and gene.
     
@@ -1005,7 +1005,7 @@ def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
         "/gene_expression_table.txt",
         sep='\t')
 
-def produce_summary(eqtls, expression_table_fp, output_dir):
+def produce_summary(eqtls, expression_table_fp, num_processes, output_dir):
     """Write final results of eQTL-eGene associations
 
     Args:
@@ -1074,15 +1074,11 @@ def produce_summary(eqtls, expression_table_fp, output_dir):
     sigwriter.writerow(summ_header)
     all_summary_rows = []  # To produce significant eQTL interactions
     manager = multiprocessing.Manager()
-    procPool = multiprocessing.Pool(processes=4)
+    procPool = multiprocessing.Pool(processes=num_processes)
     pwresults = manager.list()
     results = {'summary': [], 'significant': []}
-    bar = progressbar.ProgressBar(max_value=100)
-    i = 0
     for snp in eqtls.keys():
         procPool.apply_async(process_summary, [snp, eqtls, results, pwresults])
-        i += 1
-        bar.update(int(i*100/len(eqtls.keys())))
     procPool.close()
     procPool.join()
     mbar = progressbar.ProgressBar(max_value=100)
@@ -2116,6 +2112,6 @@ if __name__ == "__main__":
                                 args.fdr_threshold, args.local_databases_only,
                                 args.num_processes, args.output_dir,
                                 suppress_intermediate_files=args.suppress_intermediate_files)
-    produce_summary(eqtls,expression_table_fp,args.output_dir)
+    produce_summary(eqtls,expression_table_fp, args.num_processes, args.output_dir)
     produce_overview(genes,eqtls,num_sig,args.output_dir)
     pathways = retrieve_pathways(eqtls,args.fdr_threshold,args.num_processes,args.output_dir)
