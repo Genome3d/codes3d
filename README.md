@@ -22,15 +22,18 @@ You will then need to install the CoDeS3D dependencies by running `setup.sh` (yo
   - requests
   - biopython
   - matplotlib
+  - progressbar
+  - progressbar2
 - The [WikiPathways Python API client](https://github.com/wikipathways/wikipathways-api-client-py)*
 
 \* After installing the WikiPathways Python API client, you may get an ImportError when you attempt to run CoDeS3D. To prevent this, 
   go to the wikipathways-api-client-py/wikipathways_api_client/ directory and edit the first line in the __init__.py as follows:
 
-`from wikpathways_api_client import wikipathways`
+`import wikipathways_api_client`
 
 You will then be able to run CoDeS3D scripts!
 
+### Write about miniconda set up
 
 You will also need some data files with which to run your data. The simplest way to acquire these are using the `download_default_data.py` script. This will download the default data to the library directory specified by `libdir` in `docs/codes3d.conf`. Please note that most of the data files are very large, and this step is likely to take a long time, particularly if you wish to use all of the available HiC datasets. Note also that the total size of all available datasets is hundreds of gigabytes, and will require a large disk with a lot of free space.
 
