@@ -586,6 +586,7 @@ def find_eqtls(
     manager = multiprocessing.Manager()
     processed_eqtls = manager.list()
     procPool = multiprocessing.Pool(processes=num_processes)
+    #write to eqtls.txt
     for snp in eqtls.keys():
         procPool.apply_async(
             process_eqtls, (snp, snps, genes, eqtls[snp], gene_database_fp, processed_eqtls))
@@ -795,13 +796,6 @@ def query_GTEx_service(
                 result["pValue"] == "N/A"):
             continue
 
-        '''
-        if (str(result["geneSymbol"]) == "gene not found" or
-                not result["variantId"] in genes.keys() or
-                result["pvalue"] == "NA"):
-            continue
-        '''
-
         num_tests += 1
         snp = result["snpId"]
         gene = result["geneSymbol"]
@@ -952,16 +946,16 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
             print("\t\tSending request %s of %s" % (num, num_reqLists))
             gtex_url = "https://gtexportal.org/rest/v1/association/dyneqtl?v=clversion"
             res = s.post(gtex_url, json=reqList)
-            print("Printing res...", res)
+            print("Printing status code...", res.status_code )
             if res.status_code == 200:
                 gtexResponses.append((reqList, res))
                 time.sleep(1)
+                # Print to
                 return
             elif res.status_code == 500 or res.status_code == 400:
                 print("\t\tThere was an error processing request %s. \
                       Writing to failed request log and continuing." % num)
                 gtexResponses.append((reqList, "Processing error"))
-                print("Printing reqList...hohoho", reqList)
                 time.sleep(2)
                 return
             else:
