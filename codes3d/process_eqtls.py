@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 
-import argparse,codes3d,configparser,os
+import argparse
+import codes3d
+import configparser
+import os
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="")
@@ -16,15 +19,15 @@ if __name__ == "__main__":
 	if not os.path.isdir(args.output_dir):
 		os.makedirs(args.output_dir)
 	
-	print "Parsing SNPs..."
+	print("Parsing SNPs...")
 	snps = codes3d.parse_snps_files(args.snps_file)
-	print "Parsing genes..."
+	print("Parsing genes...")
 	genes = codes3d.parse_genes_files(args.genes_file)
-	print "Parsing eQTLs..."
+	print("Parsing eQTLs...")
 	eqtls,num_sig = codes3d.parse_eqtls_files(args.eqtls_file)
-	print "Re-processing eQTLs..."
+	print("Re-processing eQTLs...")
 	codes3d.process_eqtls(snps,genes,eqtls,gene_database_fp)
-	print "Writing new eQTL file..."
+	print("Writing new eQTL file...")
 	eqtlfile = open(args.output_dir + '/eqtls_corrected.txt','w')
 	for snp in eqtls.keys():
 		for gene in eqtls[snp].keys():

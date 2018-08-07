@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 
-import argparse,ast,codes3d,configparser,os
+import argparse
+import ast
+import codes3d
+import configparser
+import os
+import multiprocessing
+import sqlite3
+import time
 
 def parse_failed_requests(requests_fp):
 	reqLists = []
@@ -15,30 +22,30 @@ def get_GTEx_responses(reqLists,snps,genes,gene_database_fp,num_processes,input_
 	gene_index = gene_index_db.cursor()
 	manager = multiprocessing.Manager()
 	eqtls = {}
-	print "\t\tRequests to send: " + str(len(reqLists))
+	print("\t\tRequests to send: " + str(len(reqLists)))
 	gtexResponses = manager.list()
 	procPool = multiprocessing.Pool(processes=num_processes)
 	for i,reqList in enumerate(reqLists,start=1):
-		print "\t\t\tSending request %s of %s" % (i,len(reqLists))
+		print("\t\t\tSending request %s of %s" % (i,len(reqLists)))
 		procPool.apply_async(codes3d.send_GTEx_query, (reqList,gtexResponses))
 		time.sleep(10)
 	procPool.close()
 	procPool.join()
-	print "\t\tNumber of GTEx responses received: " + str(len(gtexResponses))
+	print("\t\tNumber of GTEx responses received: " + str(len(gtexResponses)))
 	results = []
 	failed_requests = []
 	for response in gtexResponses:
 		try:
 			results += response[1].json()["result"]
 		except Exception as e:
-			print "\t\tWARNING: bad response.\n\t\t\tException: %s\n\t\t\tResponse:\n\t\t\t%s" % (e,response[1])
+			print("\t\tWARNING: bad response.\n\t\t\tException: %s\n\t\t\tResponse:\n\t\t\t%s" % (e,response[1]))
 			failed_requests.append(response[0])
 	if failed_requests:
 		with open(input_dir + "/failed_GTEx_requests.txt",'w') as failed_requests_file:
 			failed_requests_file.write(str(failed_requests))
 	for result in results:
 		geneSymbol = result["geneSymbol"]
-		snpId = result["snpId"]
+		snpId = result["variantId"]
 		if str(geneSymbol) == "gene not found" or not snps.has_key(snpId):
 			continue
 		if not eqtls.has_key(snpId):
@@ -80,11 +87,11 @@ def get_GTEx_responses(reqLists,snps,genes,gene_database_fp,num_processes,input_
 			p = float(result["pvalue"])
 			eqtls[snpId][geneSymbol]["tissues"][result["tissueId"]] = {"pvalue": p}
 	
-	print "Writing to eQTL file..."
+	print("Writing to eQTL file...")
 	if os.path.isfile(input_dir + "/eqtls.txt"):
-		upsert = raw_input("Appending output to existing eQTL file (%s). Continue? [y/N] " % input_dir + "/eqtls.txt")
+		upsert = input("Appending output to existing eQTL file (%s). Continue? [y/N] " % input_dir + "/eqtls.txt")
 		if not upsert.lower() == 'y':
-			print "Did not write to existing SNP database."
+			print("Did not write to existing SNP database.")
 			return
 	with open(input_dir + "/eqtls.txt",'a') as eqtlfile:
 		for snp in eqtls.keys():

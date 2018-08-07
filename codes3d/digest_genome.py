@@ -18,7 +18,7 @@ if __name__ == '__main__':
 
     if args.list_enzymes:
         for enzyme in Restriction_Dictionary.rest_dict.keys():
-            print enzyme, Restriction_Dictionary.rest_dict[enzyme]['site']
+            print(enzyme, Restriction_Dictionary.rest_dict[enzyme]['site'])
     else:
         codes3d.digest_genome(args.genome,args.enzyme,args.output,args.output_db,args.do_not_index,args.linear)
 
