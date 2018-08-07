@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from itertools import cycle
-import wikipathways_api_client 
+import wikipathways_api_client
 import argparse
 import ast
 import bisect
@@ -20,6 +20,10 @@ import sqlite3
 import time
 from operator import itemgetter
 import Bio
+from Bio import SeqIO
+from Bio import Restriction
+from Bio.Restriction import RestrictionBatch
+from Bio.Restriction import Restriction_Dictionary
 import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
@@ -36,12 +40,12 @@ def parse_parameters(restriction_enzymes, include_cell_line, exclude_cell_line):
         include_cell_line: space-delimited list of cell_lines from -n.
         exclude_cell_line: space-delimited list of cell_lines from -x
     Returns:
-        res_enzymes: A list of restriction enzymes of which HiC libraries are 
+        res_enzymes: A list of restriction enzymes of which HiC libraries are
             included.
         include_cells: A list of validated HiC cell lines to be querried.
         exclude_cells: A list of validated HiC cell lines to be excluded.
     """
-    print('Parsing HiC library restriction enzymes...')        
+    print('Parsing HiC library restriction enzymes...')
     res_enzymes = []
     include_cells = []
     exclude_cells = []
@@ -57,7 +61,7 @@ def parse_parameters(restriction_enzymes, include_cell_line, exclude_cell_line):
                 res_enzymes.append(HIC_RESTRICTION_ENZYMES[
                     enzymes_upper.index(enzyme.upper())])
     if not res_enzymes:
-        sys.exit("Program terminating: No HiC libraries are prepared with " + 
+        sys.exit("Program terminating: No HiC libraries are prepared with " +
               "your restriction enzyme(s).")
     cell_lines = []
     for enzyme in res_enzymes:
@@ -106,8 +110,8 @@ def process_inputs(inputs, snp_database_fp, lib_dir,
     Returns:
         A dict named snps with the ff structure:
             {'rs9462794':{
-                          'chr': '6', 
-                          'locus': 12445846, 
+                          'chr': '6',
+                          'locus': 12445846,
                           'fragments':[
                                        {'frag': 30968, 'enzyme': 'MboI'},
                                        {'frag': 3664, 'enzyme': 'HindIII'}
@@ -132,7 +136,7 @@ def process_inputs(inputs, snp_database_fp, lib_dir,
     #fragment_index_db = sqlite3.connect(fragment_database_fp)
     #fragment_index_db.text_factory = str
     #fragment_index = fragment_index_db.cursor()
-    snps = {}    
+    snps = {}
     for input in inputs:
         if os.path.isfile(input):
             infile = open(input, 'r')
@@ -250,7 +254,7 @@ def find_interactions(
                 'rs9462794':{  # SNP rsID
                     'GM12878':{  # Cell line
                         ('6', '30099'): {
-                            }, 
+                            },
                         ('6', '31188'): [replicate1, replicate2] #Fragment chr and ID
                         }
                     'HeLa':{
@@ -267,7 +271,7 @@ def find_interactions(
           with the ff columns:
             1. SNP rsID
             2. Cell line
-            3. Fragment chromosome 
+            3. Fragment chromosome
             4. Fragment ID
     """
     print("Finding interactions...")
@@ -276,7 +280,7 @@ def find_interactions(
         include_set = set(include)
     if exclude:
         exclude_set = set(exclude)
-    interactions = {} 
+    interactions = {}
     for enzyme in restriction_enzymes:
         interactions[enzyme] = {}
         for snp in snps.keys():
@@ -306,7 +310,7 @@ def find_interactions(
                                 print("\t\t\t\tSearching replicate " + replicate)
                                 # Search database for fragments interacting with SNP
                                 # fragment
-                                
+
                                 from_db = rep_ints.execute(
                                         "SELECT chr2," +
                                         "fragment2 FROM interactions WHERE chr1=?" +
@@ -320,7 +324,7 @@ def find_interactions(
                                         if interaction not in interactions[enzyme][snp][cell_line]\
                                            .keys():
                                             interactions[enzyme][snp][cell_line]\
-                                                [interaction] = set([]) 
+                                                [interaction] = set([])
                                         interactions[enzyme][snp][cell_line]\
                                             [interaction].add(replicate)
     if not suppress_intermediate_files:
@@ -346,7 +350,7 @@ def find_genes(
     """Identifies genes in fragments that interact with SNP fragments.
 
     Args:
-        interactions: The dictionary fragements that interact with  SNP fragments 
+        interactions: The dictionary fragements that interact with SNP fragments
             returned from find_interactions
         fragment_database_fp: ../../lib/Homo_sapiens.GRCh37.75.dna.fragments.db
         gene_bed_fp: ../../lib/gene_reference.bed
@@ -354,7 +358,7 @@ def find_genes(
         suppress_intermediate_files: if 'False', snps.txt file is written to output_dir
 
     Returns:
-        A dict named 'genes' containing genes  in fragments that interact with SNP
+        A dict named 'genes' containing genes in fragments that interact with SNP
                 fragments e.g.
             {'rs9462794':{  # SNP rsID
                 'PHACTR1':{  # Gene
@@ -373,11 +377,11 @@ def find_genes(
           Each file has the ff columns:
             1. SNP rsID
             2. Gene name
-            3. Cell line 
+            3. Cell line
             4. HiC contact counts
             5. Number of replicates in which contact is found
-            6. Number of cell line replicates 
-    """    
+            6. Number of cell line replicates
+    """
     print("Identifying interactions with genes...")
     hs_gene_bed = pybedtools.BedTool(gene_bed_fp)
     genes = {}
@@ -446,7 +450,7 @@ def find_genes(
         snps_to_remove[enzyme] = []
         for snp in interactions[enzyme].keys():
             if not snp in genes.keys():
-		print("\tNo SNP-gene spatial interactions detected for %s, \
+                print("\tNo SNP-gene spatial interactions detected for %s, \
                       removing from analysis" % (snp,))
                 snps_to_remove[enzyme].append(snp)
     for enzyme in snps_to_remove.keys(): #Update snps and interactions mappings.
@@ -500,11 +504,11 @@ def find_eqtls(
 
     Args:
         snps: The dictionary of SNP fragments returned from process_inputs
-        genes: The dictionary of genes that interact with SNPs from find_genes 
+        genes: The dictionary of genes that interact with SNPs from find_genes
         eqtl_data_dir: ../../eQTLs  #For local eQTL query
         gene_database_fp: ../../gene_reference.db
         fdr_threshold: Significance threshold for the FDR. Default = 0.05
-        local_databases_only: boolean specifying if only local eQTL database 
+        local_databases_only: boolean specifying if only local eQTL database
             should be querried.
         num_processes: Number of processors to be used when multiprocessing.
         output_dir: User-specified directory for results. Defaults to inputs directory.
@@ -545,7 +549,7 @@ def find_eqtls(
                 }
 
         num_sig: Number of eQTL interactions with adj_p_values >= FDR threshold
-        
+
         If suppress_intermediate_files=False, a eqtls.txt file is written
           with the ff columns:
             1. SNP rsID
@@ -556,15 +560,15 @@ def find_eqtls(
             6. Gene start
             7. Gene end
             8. Cell lines
-            9  Cell lines HiC score
+            9.  Cell lines HiC score
             10. HiC contact score
-            11.. Cis interaction?
+            11. Cis interaction?
             12. eQTL p threshold from GTEx
             13. Tissue of eQTL interaction
             14. eQTL pvalue
             15. Adjusted pvalue
             16. eQTL effect size
-    """    
+    """
     print("Identifying eQTLs of interest...")
     eqtls = {}  # A mapping of SNP-gene eQTL relationships
     p_values = []  # A sorted list of all p-values for computing FDR
@@ -668,24 +672,24 @@ def query_GTEx_service(
 
     Args:
         snps: The dictionary of SNP fragments returned from process_inputs
-        genes: The dictionary of genes that interact with SNPs from find_genes 
+        genes: The dictionary of genes that interact with SNPs from find_genes
         eqtls: A mapping of eQTl relationships between SNPs to genes, which
             further  maps to a list of tissues in which these eQTLs occur
         p_values: A sorted list of all p-values for use computing FDR.
         num_processes: Number of processors to be used when multiprocessing.
-        output_dir: User-specified directory for results. Defaults to inputs 
+        output_dir: User-specified directory for results. Defaults to inputs
             directory.
 
     Returns:
-        num_tests: The number of successful GTEx responses 
+        num_tests: The number of successful GTEx responses
         eqtls and p_values are updated.
-        If GTEx query fails for SNP-gene-tissue request, the failed requests 
+        If GTEx query fails for SNP-gene-tissue request, the failed requests
             are written to failed_GTEx_requests.txt thus:
             [
                 {
-                    'snpId': 'rs9462794', 
+                    'variantId': 'rs9462794',
                     'gencodeId': LINC00669'
-                    'tissueName': 'Artery_Aorta'
+                    'tissueSiteDetailId': 'Artery_Aorta'
                 }
             ]
     """
@@ -709,8 +713,8 @@ def query_GTEx_service(
                    "Brain_Spinal_cord_cervical_c-1",
                    "Brain_Substantia_nigra",
                    "Breast_Mammary_Tissue",
-                   "Cells_EBV-transformed_lymphocytes",
-                   "Cells_Transformed_fibroblasts",
+                   "Cells_EBV-transformed_lymphocytes", # To remove?
+                   "Cells_Transformed_fibroblasts", # To remove?
                    "Colon_Sigmoid",
                    "Esophagus_Gastroesophageal_Junction",
                    "Esophagus_Mucosa",
@@ -736,7 +740,7 @@ def query_GTEx_service(
                    "Uterus",
                    "Vagina",
                    "Whole_Blood"])
-    if num_processes > 2 : # Ensure GTEx is not 'flooded' with requests 
+    if num_processes > 2 : # Ensure GTEx is not 'flooded' with requests
         num_processes = 2
     manager = multiprocessing.Manager()
     num_tests = 0
@@ -750,18 +754,18 @@ def query_GTEx_service(
                         (gene in eqtls[snp].keys() and
                         not tissue in eqtls[snp][gene]["tissues"].keys())):
                     if len(reqLists[-1]) < 950: # >1000 requests is buggy.
-                        reqLists[-1].append({"snpId": snp,
+                        reqLists[-1].append({"variantId": snp,
                                              "gencodeId": gene,
-                                             "tissueName": tissue})
-                    elif reqLists[-1][-1]["snpId"] == snp and \
+                                             "tissueSiteDetailId": tissue})
+                    elif reqLists[-1][-1]["variantId"] == snp and \
                          reqLists[-1][-1]["gencodeId"] == gene:
-                        # Ensure that all tissues of a SNp-gene pair are in same ReqList 
-                        reqLists[-1].append({"snpId": snp,
+                        # Ensure that all tissues of a SNP-gene pair are in same ReqList
+                        reqLists[-1].append({"variantId": snp,
                                              "gencodeId": gene,
-                                             "tissueName": tissue})
+                                             "tissueSiteDetailId": tissue})
                     else:
                         reqLists.append(
-                            [{"snpId": snp, "gencodeId": gene, "tissueName": tissue}])
+                            [{"variantId": snp, "gencodeId": gene, "tissueSiteDetailId": tissue}])
     print("\tQuerying GTEx online service...")
     gtexResponses = manager.list()
     procPool = multiprocessing.Pool(processes=num_processes)
@@ -777,6 +781,7 @@ def query_GTEx_service(
     for response in gtexResponses:
         try:
             results += response[1].json()["result"]
+            print("Printing gtex...", response[1].json()["result"])
         except Exception as e:
             print("\t\tWARNING: bad response (%s)" % response[1])
             failed_requests.append(response[0])
@@ -787,8 +792,16 @@ def query_GTEx_service(
     for result in results:
         if (str(result["geneSymbol"]) == "gene not found" or
                 not result["snpId"] in genes.keys() or
+                result["pValue"] == "N/A"):
+            continue
+
+        '''
+        if (str(result["geneSymbol"]) == "gene not found" or
+                not result["variantId"] in genes.keys() or
                 result["pvalue"] == "NA"):
             continue
+        '''
+
         num_tests += 1
         snp = result["snpId"]
         gene = result["geneSymbol"]
@@ -796,9 +809,9 @@ def query_GTEx_service(
             eqtls[snp] = {}
         if not gene in eqtls[snp].keys():
             eqtls[snp][gene] = {"tissues": {}}
-        p = float(result["pvalue"])
-        effect_size = float(result["beta"])
-        eqtls[snp][gene]["tissues"][result["tissueId"]] = {
+        p = float(result["pValue"])
+        effect_size = float(result["nes"])
+        eqtls[snp][gene]["tissues"][result["tissueSiteDetailId"]] = {
             "pvalue": p, "effect_size": effect_size}
         bisect.insort(p_values, p)
     return num_tests
@@ -809,7 +822,7 @@ def process_eqtls(snp, snps, genes, snp_data, gene_database_fp, processed_eqtls)
 
     Args:
         snps: The dictionary of SNP fragments returned from process_inputs
-        genes: The dictionary of genes that interact with SNPs from find_genes 
+        genes: The dictionary of genes that interact with SNPs from find_genes
         eqtls: A mapping of eQTl relationships between SNPs to genes, which
             further  maps to a list of tissues in which these eQTLs occur
         gene_database_fp: ../../gene_reference.db
@@ -856,7 +869,7 @@ def process_eqtls(snp, snps, genes, snp_data, gene_database_fp, processed_eqtls)
         # eQTL is cis if the SNP is within 1Mbp of the gene
         cis = gene_chr == snp_data["snp_info"]["chr"] and (
             (snp_data["snp_info"]["locus"] > gene_start - 1000000) and
-            (snp_data["snp_info"]["locus"] < gene_end + 1000000))  
+            (snp_data["snp_info"]["locus"] < gene_end + 1000000))
         snp_data[gene]["gene_chr"] = gene_chr
         snp_data[gene]["gene_start"] = gene_start
         snp_data[gene]["gene_end"] = gene_end
@@ -878,10 +891,10 @@ def process_eqtls(snp, snps, genes, snp_data, gene_database_fp, processed_eqtls)
             snp_data[gene]["hic_cells"] = "NA"
     processed_eqtls.append((snp, snp_data))
 
-                
+
 def calc_hic_contacts(genes, snp, gene):
-    """Calculates score of HiC coontacts between SNP and gene.
-    
+    """Calculates score of HiC contacts between SNP and gene.
+
     Args:
         genes: Dictionary from find_genes
         snp:
@@ -908,12 +921,12 @@ def calc_hic_contacts(genes, snp, gene):
 
 
 def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
-    """Posts and receives requests from GTEx 
-    
+    """Posts and receives requests from GTEx
+
     Args:
         num: An integer indicating the request being processed.
         num_reqLists: The total number of requests to be submitted
-        reqList: A list of > 950 SNP, gene and tissue JSON data
+        reqList: A list of < 950 SNP, gene and tissue JSON data
         gtexResponses: A manager.list() object to handle requests.
 
     Returns:
@@ -926,14 +939,11 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
                 'pvalue': '0.37233196039320215',
                 'pvalueThreshold': None,
                 'se': '0.0929115299234',
-                'snpId': 'rs9462794',
-                'tissueId': 'Prostate',
+                'variantId': 'rs9462794',
+                'tissueId': 'Prostate',:
                 'tstat': '0.8957694731579682',
-                'variantId': '6_12445847_A_T_b37'}
-
-
-             
-           )]
+                'variantId': '6_12445847_A_T_b37'})
+           ]
     """
     s = requests.Session()
     s.verify = GTEX_CERT
@@ -942,24 +952,26 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
             print("\t\tSending request %s of %s" % (num, num_reqLists))
             gtex_url = "https://gtexportal.org/rest/v1/association/dyneqtl?v=clversion"
             res = s.post(gtex_url, json=reqList)
+            print("Printing res...", res)
             if res.status_code == 200:
                 gtexResponses.append((reqList, res))
                 time.sleep(1)
                 return
             elif res.status_code == 500 or res.status_code == 400:
-                print("\t\tThere was an error processing request %s. " +\
-                      "Writing to failed request log and continuing." % num)
+                print("\t\tThere was an error processing request %s. \
+                      Writing to failed request log and continuing." % num)
                 gtexResponses.append((reqList, "Processing error"))
+                print("Printing reqList...hohoho", reqList)
                 time.sleep(2)
                 return
             else:
-                print("\t\tRequest %s received response with status %s. " +\
-                      "Trying again in five minutes." % (num, res.status_code))
+                print("\t\tRequest %s received response with status %s. \
+                      Trying again in five minutes." % (num, res.status_code))
                 time.sleep(10)
     except requests.exceptions.ConnectionError:
         try:
-            print("\t\tWarning: Request %s experienced a connection error. " +\
-                  "Retrying in five minutes." % num)
+            print("\t\tWarning: Request %s experienced a connection error. \
+                  Retrying in five minutes." % num)
             time.sleep(300)
             while True:
                 print("\t\tSending request %s of %s" % (num, num_reqLists))
@@ -971,14 +983,14 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
                     time.sleep(30)
                     return
                 elif res.status_code == 500:
-                    print("\t\tThere was an error processing request %s. " +\
-                          "Writing to failed request log and continuing." % num)
+                    print("\t\tThere was an error processing request %s. \
+                          Writing to failed request log and continuing." % num)
                     gtexResponses.append((reqList, "Processing error"))
                     time.sleep(30)
                     return
                 else:
-                    print("\t\tRequest %s received response with status: %s. " +\
-                          "Trying again in five minutes." % (num, res.status_code))
+                    print("\t\tRequest %s received response with status: %s. \
+                          Trying again in five minutes." % (num, res.status_code))
                     time.sleep(300)
         except requests.exceptions.ConnectionError:
             print("\t\tRetry failed. Continuing, but results will be incomplete.")
@@ -989,7 +1001,7 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
 
 
 def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
-    
+
     print("Getting gene expression information...")
     gene_df = pandas.read_table(expression_table_fp, index_col='Symbol')
     gene_exp = pandas.DataFrame(data=None, columns=gene_df.columns)
@@ -1010,26 +1022,26 @@ def produce_summary(eqtls, expression_table_fp, num_processes, output_dir):
 
     Args:
         eqtls: A mapping of eQTl relationships between SNPs to genes, which
-            further  maps to a list of tissues in which these eQTLs occur
+            further maps to a list of tissues in which these eQTLs occur
         expression_table_fp: ../../GTEx
         output_dir:
 
     Returns:
         summary.txt: A file with the ff structure.
-            1. SNP 
+            1. SNP
             2. SNP chromosome
             3. SNP locus
             4. Gene name
             5. Gene chromosome
-            6. Gene start 
+            6. Gene start
             7. Gene end
             8. Tissue
             9. p-value
             10. Adj p-value
             11. Effect size
-            12. Cell lines 
+            12. Cell lines
             13. GTEx_cis_p_Threshold
-            14. cis_SNP-gene_interaction 
+            14. cis_SNP-gene_interaction
             15. SNP-gene_Distance
             16. Expression_Level_In_eQTL_Tissue
             17. Max_Expressed_Tissue
@@ -1037,7 +1049,7 @@ def produce_summary(eqtls, expression_table_fp, num_processes, output_dir):
             19. Min_Expressed_Tissue
             20. Min_Expression_Level
 
-        sig_eqtls.text: A file with eQTL associations with 
+        sig_eqtls.text: A file with eQTL associations with
             adj_p_values <= FDR threshold. Same structure as summary.txt
     """
     # TODO: Tidy up this method using pandas @Cam
@@ -1072,7 +1084,6 @@ def produce_summary(eqtls, expression_table_fp, num_processes, output_dir):
     sig_file = open(os.path.join(output_dir, 'significant_eqtls.txt'), 'w')
     sigwriter = csv.writer(sig_file, delimiter='\t')
     sigwriter.writerow(summ_header)
-    all_summary_rows = []  # To produce significant eQTL interactions
     manager = multiprocessing.Manager()
     procPool = multiprocessing.Pool(processes=num_processes)
     pwresults = manager.list()
@@ -1085,14 +1096,14 @@ def produce_summary(eqtls, expression_table_fp, num_processes, output_dir):
     i = 0
     for snp in pwresults:
         for summ in snp[1]['summary']:
-           summ_writer.writerow(summ)
+            summ_writer.writerow(summ)
         for sig in snp[1]['significant']:
             sigwriter.writerow(sig)
         i += 1
         mbar.update(i*100/len(pwresults))
     summary.close()
     sig_file.close()
-    
+
 def process_summary(snp, eqtls, results, pwresults):
     gene_df = pandas.read_table(expression_table_fp, index_col="Description")
     gene_exp = {}  # Cache of already-accessed gene expression data
@@ -1187,10 +1198,10 @@ def process_summary(snp, eqtls, results, pwresults):
     pwresults.append((snp, results))
 
 def compute_adj_pvalues(p_values):
-    """ A Benjamini-Hochberg adjustment of p values of SNP-gene eQTL 
+    """ A Benjamini-Hochberg adjustment of p values of SNP-gene eQTL
            interactions from GTEx.
 
-    Args: 
+    Args:
         p_values: List of sorted p values of all eQTL associations
 
     Returns:
@@ -1210,7 +1221,7 @@ def compute_adj_pvalues(p_values):
         adj_pvalues.append(adj_pval)
     return(p_values, adj_pvalues)
 
-            
+
 def produce_overview(genes, eqtls, num_sig, output_dir):
     """Generates overview graphs and table
 
@@ -1529,7 +1540,7 @@ def build_snp_index(
         return
 
     if os.path.isfile(output_fp):
-        upsert = raw_input(
+        upsert = input(
             "WARNING: Upserting input to existing SNP database (%s). Continue? [y/N] " %
             output_fp)
         if not upsert.lower() == 'y':
@@ -1545,9 +1556,9 @@ def build_snp_index(
         "CREATE TABLE IF NOT EXISTS snps (rsID text unique, chr text, locus integer)")
     snp_index.execute("CREATE INDEX IF NOT EXISTS id ON snps (rsID,chr,locus)")
     res = ""
-    id_col = id_col - 1
-    chr_col = chr_col - 1
-    locus_col = locus_col - 1
+    id_col = int(id_col) - 1
+    chr_col = int(chr_col) - 1
+    locus_col = int(locus_col) - 1
     for bed_fp in os.listdir(snp_dir):
         print("\tProcessing " + bed_fp)
         bed = open(snp_dir + '/' + bed_fp, 'r')
@@ -1560,7 +1571,7 @@ def build_snp_index(
                                   snp[id_col], snp[chr_col][snp[chr_col].find("chr") + 3:], int(snp[locus_col])])
             except sqlite3.IntegrityError:
                 if res == "":
-                    res = raw_input(
+                    res = input(
                         "Warning: database already contains an entry for SNP with ID %s. Overwrite?\n1: Yes\n2: No (default)\n3: Yes To All\n4: No To All\nChoice: " %
                         snp[id_col])
                 if res.strip() == "1":
@@ -1602,7 +1613,7 @@ def build_hic_index(
         frag2_col=9,
         mapq1_col=10,
         mapq2_col=11,
-        mapq_cutoff=150,
+        mapq_cutoff=30,
         do_not_tidy_up=False):
     if not output_fp:
         if not input_hic_fp.rfind('.') == -1:
@@ -1611,7 +1622,7 @@ def build_hic_index(
             output_fp = input_hic_fp + ".db"
 
     if os.path.isfile(output_fp):
-        overwrite = raw_input(
+        overwrite = input(
             "WARNING: Overwriting existing HiC database (%s). Continue? [y/N] " %
             output_fp)
         if not upsert.lower() == 'y':
@@ -1635,12 +1646,12 @@ def build_hic_index(
         "CREATE TABLE IF NOT EXISTS interactions (chr1 text, fragment1 text, chr2 text, fragment2 text)")
     interactions.execute(
         "CREATE INDEX IF NOT EXISTS i_1 ON interactions (chr1, fragment1)")
-    chr1_col = chr1_col - 1
-    chr2_col = chr2_col - 1
-    frag1_col = frag1_col - 1
-    frag2_col = frag2_col - 1
-    mapq1_col = mapq1_col - 1
-    mapq2_col = mapq2_col - 1
+    chr1_col = int(chr1_col) - 1
+    chr2_col = int(chr2_col) - 1
+    frag1_col = int(frag1_col) - 1
+    frag2_col = int(frag2_col) - 1
+    mapq1_col = int(mapq1_col) - 1
+    mapq2_col = int(mapq2_col) - 1
     with open(input_hic_fp, 'r') as rao_table:
         print("Indexing HiC interaction table...")
         for i, line in enumerate(rao_table):
@@ -1685,7 +1696,7 @@ def digest_genome(
     if not os.path.isdir(os.path.dirname(output_fp)):
         os.makedirs(os.path.dirname(output_fp))
     if os.path.isfile(output_fp):
-        overwrite = raw_input(
+        overwrite = input(
             "WARNING: Overwriting existing fragment BED %s. Continue? [y/N] " %
             output_fp)
         if not overwrite.lower() == 'y':
@@ -1695,9 +1706,9 @@ def digest_genome(
 
     print("Digesting")
     if "fasta" in genome or "fa" in genome:
-        genome = SeqIO.parse(open(genome, "rU"), format='fasta')
+        genome = Bio.SeqIO.parse(open(genome, "rU"), format='fasta')
     else:
-        genome = SeqIO.parse(open(genome, "rU"), format='genbank')
+        genome = Bio.SeqIO.parse(open(genome, "rU"), format='genbank')
 
     with open(output_fp, 'w') as bedfile:
         output = csv.writer(bedfile, delimiter="\t")
@@ -1740,7 +1751,7 @@ def build_fragment_index(fragment_fp, output_db):
         else:
             output_db = fragment_fp + ".db"
     if os.path.isfile(output_db):
-        overwrite = raw_input(
+        overwrite = input(
             "WARNING: Overwriting existing fragment database %s. Continue? [y/N] " %
             output_db)
         if not overwrite.lower() == 'y':
@@ -1808,7 +1819,7 @@ def build_gene_index(
     append_bed = False
     overwrite_bed = True
     if os.path.isfile(output_bed):
-        upsert = raw_input(
+        upsert = input(
             "WARNING: Appending input to existing BED file (%s). Continue? [y/N] " %
             output_bed)
         if not upsert.lower() == 'y':
@@ -1824,7 +1835,7 @@ def build_gene_index(
     upsert_db = True
 
     if os.path.isfile(output_db):
-        upsert = raw_input(
+        upsert = input(
             "WARNING: Upserting input to existing gene database (%s). Continue? [y/N] " %
             output_db)
         if not upsert.lower() == 'y':
@@ -1978,7 +1989,7 @@ def build_eqtl_index(
         os.makedirs(os.path.dirname(output_fp))
 
     if os.path.isfile(output_fp):
-        upsert = raw_input(
+        upsert = input(
             "WARNING: Upserting input to existing eQTL database %s. Continue? [y/N] " %
             output_fp)
         if not upsert.lower() == 'y':
