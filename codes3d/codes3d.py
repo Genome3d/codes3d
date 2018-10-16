@@ -722,7 +722,7 @@ def query_GTEx_service(
     return num_tests
 
 @profile
-def calc_hic_contacts(genes, snp, gene):
+def calc_hic_contacts(snp_gene_tpl):
     """Calculates score of HiC contacts between SNP and gene.
 
     Args:
@@ -734,6 +734,10 @@ def calc_hic_contacts(genes, snp, gene):
         hic_score: sum of the averages of contacts per cell line.
         score_list: a list of the means of contacts in each cell line
     """
+    global genes_global
+    genes = genes_global
+    snp = snp_gene_tpl[0]
+    gene = snp_gene_tpl[1]
     hic_score = 0
     scores = []
     for cell_line in genes[snp][gene]:
@@ -741,13 +745,9 @@ def calc_hic_contacts(genes, snp, gene):
             / float(genes[snp][gene][cell_line]['replicates'])
         hic_score += score
         scores.append(score)
-    score_list = "{:.2f}".format(scores[0])
-    if len(scores) > 1:
-        for i in range(1, len(scores)):
-            score_list += ', ' + "{:.2f}".format(scores[i])
+    score_list = ', '.join(["{:.2f}".format(scores[i]) for i in range(len(scores))])
     hic_score = "{:.4f}".format(hic_score)
-
-    return(hic_score, score_list)
+    return (hic_score, score_list)
 
 @profile
 def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
@@ -852,20 +852,18 @@ def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
 @profile
 def get_gene_expression_extremes(gene):
     global gene_exp
-    tissue_expr = list()
+    tissue_expr = [] 
     for tissue in gene_exp[gene].keys():
         if gene_exp[gene][tissue] != 'NA':
-            tissue_expr.append(tuple([tissue, gene_exp[gene][tissue]]))
+            tissue_expr.append((tissue, gene_exp[gene][tissue]))
     tissue_expr.sort(key=lambda tpl: tpl[1])
-    return list([tissue_expr[-1][0], tissue_expr[-1][1], tissue_expr[0][0], tissue_expr[0][1]])    
+    return (tissue_expr[-1][0], tissue_expr[-1][1], tissue_expr[0][0], tissue_expr[0][1])    
 
 @profile
 def get_tissue_expression(gene_tissue_tpl):
     global gene_df
-    gene = gene_tissue_tpl[0]
-    tissue = gene_tissue_tpl[1]
     try:
-        return gene_df.at[gene, tissue].max()
+        return gene_df.at[gene_tissue_tpl[0], gene_tissue_tpl[1]].max()
     except:
         print("\t\tWarning: No expression information for %s in %s" % (gene, tissue))
         return 'NA'
@@ -909,6 +907,8 @@ def produce_summary(
         sig_eqtls.text: A file with eQTL associations with
             adj_p_values <= FDR threshold. Same structure as summary.txt
     """
+    global genes_global
+    genes_global = genes
     num_sig = {}  # Number of eQTLs deemed significant under the given threshold
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
@@ -942,9 +942,8 @@ def produce_summary(
     sigwriter.writerow(summ_header)    
     gene_index_db = sqlite3.connect(gene_database_fp)
     gene_index_db.text_factory = str
-    gene_index = gene_index_db.cursor()
     col_names = [res[1]
-                 for res in gene_index.execute("PRAGMA table_info(genes)")]
+                 for res in gene_index_db.execute("PRAGMA table_info(genes)")]
     include_p_thresh = "p_thresh" in col_names
     if include_p_thresh:
         query_str = "SELECT chr, start, end, p_thresh FROM genes WHERE symbol=?"
@@ -952,14 +951,15 @@ def produce_summary(
         query_str = "SELECT chr, start, end FROM genes WHERE symbol=?"
     global gene_df
     global gene_exp
-    gene_df = pandas.read_table(expression_table_fp, index_col="Description")
-    gene_exp = dict() 
+    gene_df = pandas.read_table(expression_table_fp, index_col="Description", engine='c', compression=None, memory_map=True)
+    gene_exp = {} 
     eqtlfile = open(os.path.join(output_dir, 'eqtls.txt'), 'r')
     ereader = csv.reader(eqtlfile, delimiter = '\t')
     bar  = progressbar.ProgressBar(max_value = progressbar.UnknownLength)
-    to_file = list()
-    genes_from_file = list()
-    tissues_from_file = list()
+    to_file = [] 
+    genes_from_file = []
+    tissues_from_file = [] 
+    snps_from_file = [] 
     for i, row in enumerate(ereader,1):
         snp = row[0]
         gene = row[1]
@@ -968,6 +968,7 @@ def produce_summary(
         effect_size = row[4]
         genes_from_file.append(gene)
         tissues_from_file.append(tissue)
+        snps_from_file.append(snp)
         qvalue = p_values[float(p_val)]
         snp_info = {
             "chr": snps[snp]["chr"],
@@ -977,22 +978,22 @@ def produce_summary(
         gene_start = "NA"
         gene_end = "NA"
         max_length = 0
-        for gene_stat in gene_index.execute(query_str, [gene]):
-            # Consider "canonical" to be the longest record where
-            # multiple records are present
-            if abs(gene_stat[2] - gene_stat[1]) > max_length:
-                if gene_stat[0].startswith("chr"):
-                    gene_chr = gene_stat[0][gene_stat[0].find(
-                        "chr") + 3:]
-                else:
-                    gene_chr = gene_stat[0]
-                gene_start = gene_stat[1]
-                gene_end = gene_stat[2]
-                if include_p_thresh:
-                    p_thresh = gene_stat[3]
-                else:
-                    p_thresh = "NA"
-                max_length = gene_stat[2] - gene_stat[1]
+
+        gene_stat = gene_index_db.execute(query_str, [gene]).fetchone()
+        # Consider "canonical" to be the longest record where
+        # multiple records are present
+        if abs(gene_stat[2] - gene_stat[1]) > max_length:
+            if gene_stat[0].startswith("chr"):
+                gene_chr = gene_stat[0][3:]
+            else:
+                gene_chr = gene_stat[0]
+            gene_start = gene_stat[1]
+            gene_end = gene_stat[2]
+        max_length = gene_stat[2] - gene_stat[1]
+        if include_p_thresh:
+            p_thresh = gene_stat[3]
+        else:
+            p_thresh = "NA"
         # eQTL is cis if the SNP is within 1Mbp of the gene
         cis = gene_chr == snp_info["chr"] and (
             (snp_info["locus"] > gene_start - 1000000) and
@@ -1008,14 +1009,7 @@ def produce_summary(
             interaction = True
         else:
             interaction = False
-        hic_score = ''
-        hic_cells = ''
         to_cell_line = ', '.join(cell_lines)
-        try:
-            hic_score, hic_cells = calc_hic_contacts(genes, snp, gene)
-        except KeyError:
-            hic_score = "NA"
-            hic_cells = "NA"
         distance_from_snp = 0
         if(gene_chr == "NA"):
             distance_from_snp = "NA"  # If gene location information is missing
@@ -1025,9 +1019,9 @@ def produce_summary(
             distance_from_snp = gene_start - snp_info["locus"]
         elif(snp_info["locus"] > gene_end):
             distance_from_snp = snp_info["locus"] - gene_end
-        if not gene in gene_exp.keys():
-            gene_exp[gene] = dict() 
-        if not tissue in gene_exp[gene].keys():
+        if not gene in gene_exp:
+            gene_exp[gene] = {} 
+        if not tissue in gene_exp[gene]:
             gene_exp[gene][tissue] = 'NA'
         to_file.append([snp,
                    snp_info["chr"],
@@ -1041,8 +1035,6 @@ def produce_summary(
                    qvalue,
                    effect_size,
                    to_cell_line,
-                   hic_cells,
-                   hic_score,
                    p_thresh,
                    interaction,
                    distance_from_snp])
@@ -1050,23 +1042,34 @@ def produce_summary(
 
     genes_from_file = dict.fromkeys(genes_from_file).keys()
     tissues_from_file = dict.fromkeys(tissues_from_file).keys()
-    genes_tissues = [tuple([gene, tissue]) for gene in genes_from_file for tissue in tissues_from_file]
+    snps_from_file = dict.fromkeys(snps_from_file).keys()
     current_process = psutil.Process()
-    expression_pool = multiprocessing.Pool(len(current_process.cpu_affinity()))
-    gene_tissue_expression_extremes = expression_pool.map(get_tissue_expression, genes_tissues)
+    num_processes = len(current_process.cpu_affinity())
+    genes_tissues = [(gene, tissue) for gene in genes_from_file for tissue in tissues_from_file]
+    pool = multiprocessing.Pool(processes=num_processes)
+    gene_tissue_expression_extremes = pool.map(get_tissue_expression, genes_tissues)
     for i in range(len(genes_tissues)):
         gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = gene_tissue_expression_extremes[i]
 
-    current_process = psutil.Process()
-    expression_pool = multiprocessing.Pool(len(current_process.cpu_affinity()))
-    gene_expression_extremes = expression_pool.map(get_gene_expression_extremes, genes_from_file)
-    gene_exp_extr = dict() 
+    snps_genes = [(snp, gene) for snp in snps_from_file for gene in genes_from_file]
+    hic_data = pool.map(calc_hic_contacts, snps_genes)
+    hic_dict = {} 
+    for i in range(len(snps_genes)):
+        hic_dict[snps_genes[i]] = hic_data[i]
+
+    pool = multiprocessing.Pool(processes=num_processes) 
+    gene_expression_extremes = pool.map(get_gene_expression_extremes, genes_from_file)
+    gene_exp_extr = {} 
     for i in range(len(genes_from_file)):
         gene_exp_extr[genes_from_file[i]] = gene_expression_extremes[i]
 
+
     for line in to_file:
+        snp = line[0]
         gene = line[3]
         tissue = line[7]
+        line.insert(12, hic_dict[(snp, gene)][0])
+        line.insert(13, hic_dict[(snp, gene)][1])
         line.append(gene_exp[gene][tissue])
         line.extend(gene_exp_extr[gene])
         summ_writer.writerow(line)
@@ -1425,7 +1428,7 @@ def parse_eqtls_files(
         with open(eqtls_file, 'r') as efile:
             shutil.copyfileobj(efile, joined_eqtl_file)
     
-    p_values_map = dict() 
+    p_values_map = {} 
     print('Adjusting p values...')
     adjusted_p_values = compute_adj_pvalues(p_values)
     for i in range(len(p_values)):
