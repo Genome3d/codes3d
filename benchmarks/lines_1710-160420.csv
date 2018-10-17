@@ -1,0 +1,242 @@
+Line,Times Executed,Total Execution Time,Time per Execution,% of Function Execution Time,Function,Code
+1032,1,4358282.5,4358282.5,32.8,produce_summary,"gene_tissue_expression_extremes = pool.map(get_tissue_expression, genes_tissues)"
+1042,1,774306.5,774306.5,5.75,produce_summary,pool = multiprocessing.Pool(processes=num_processes)
+964,22069,749361.5,34.0,5.65,produce_summary,"gene_stat = gene_index_db.execute(query_str, (gene,)).fetchone()"
+1031,1,656526.0,656526.0,4.8,produce_summary,pool = multiprocessing.Pool(processes=num_processes)
+936,1,546172.5,546172.5,4.2,produce_summary,"gene_df = pandas.read_table(expression_table_fp, index_col=""Description"", engine='c', compression=None, memory_map=True)"
+1057,22069,473021.0,21.45,3.6,produce_summary,summ_writer.writerow(line)
+1023,22069,329251.0,14.9,2.5,produce_summary,bar.update(i)
+1351,22069,219208.5,9.9,16.8,parse_eqtls_files,"bisect.insort(p_values, float(row[3]))"
+1404,1,216711.0,216711.0,16.5,parse_eqtls_files,adjusted_p_values = compute_adj_pvalues(p_values)
+1079,1,216676.5,216676.5,100.0,compute_adj_pvalues,"return R.r['p.adjust'](p_values, method='BH')"
+1388,2,186793.0,93396.5,14.3,parse_eqtls_files,"'frag': cur.fetchone()[0],"
+1406,22069,135084.5,6.1,10.4,parse_eqtls_files,p_values_map[p_values[i]] = adjusted_p_values[i]
+1034,30096,128224.0,4.3,1.0,produce_summary,gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = gene_tissue_expression_extremes[i]
+945,22070,122737.0,5.6,0.9,produce_summary,"for i, row in enumerate(ereader,1):"
+1053,22069,122499.0,5.55,0.9,produce_summary,"line.insert(12, hic_dict[(snp, gene)][0])"
+985,22069,121384.0,5.5,0.9,produce_summary,cell_lines = list(genes[snp][gene])
+954,22069,116042.0,5.3,0.9,produce_summary,qvalue = p_values[float(p_val)]
+1386,2,92846.5,46423.25,7.1,parse_eqtls_files,snps[snp]['locus']))
+1030,30724,92774.0,3.0,0.7,produce_summary,"genes_tissues = [(gene, tissue) for gene in genes_from_file for tissue in tissues_from_file]"
+1043,1,91344.0,91344.0,0.7,produce_summary,"gene_expression_extremes = pool.map(get_gene_expression_extremes, genes_from_file)"
+1055,22069,91028.0,4.1,0.7,produce_summary,line.append(gene_exp[gene][tissue])
+1033,30097,90596.0,3.0,0.7,produce_summary,for i in range(len(genes_tissues)):
+1054,22069,90144.5,4.1,0.7,produce_summary,"line.insert(13, hic_dict[(snp, gene)][1])"
+967,22069,87632.0,4.0,0.7,produce_summary,if abs(gene_stat[2] - gene_stat[1]) > max_length:
+1346,22070,82147.0,3.7,6.3,parse_eqtls_files,"for i, row in enumerate(ereader, 1):"
+968,22069,80403.5,3.6,0.6,produce_summary,"if gene_stat[0].startswith(""chr""):"
+1022,22069,80171.5,3.6,0.6,produce_summary,distance_from_snp])
+1058,22069,79264.5,3.6,0.6,produce_summary,if line[9] < fdr_threshold:
+1334,1,78592.5,78592.5,6.0,parse_eqtls_files,"genes = parse_genes_files(os.path.join(file_path, 'genes.txt'))"
+994,22069,78583.0,3.6,0.6,produce_summary,"to_cell_line = ', '.join(cell_lines)"
+1006,22069,77434.0,3.5,0.6,produce_summary,if not tissue in gene_exp[gene]:
+1056,22069,77076.0,3.5,0.6,produce_summary,line.extend(gene_exp_extr[gene])
+1007,22069,76526.0,3.5,0.6,produce_summary,gene_exp[gene][tissue] = 'NA'
+958,22069,74435.0,3.4,0.6,produce_summary,"""fragments"": snps[snp][""fragments""]}"
+980,22069,73261.5,3.3,0.6,produce_summary,"cis = gene_chr == snp_info[""chr""] and ("
+1004,22069,73243.0,3.3,0.6,produce_summary,if not gene in gene_exp:
+956,22069,72597.5,3.3,0.5,produce_summary,"""chr"": snps[snp][""chr""],"
+1050,22069,70784.5,3.2,0.5,produce_summary,snp = line[0]
+1049,22070,70055.0,3.2,0.5,produce_summary,for line in to_file:
+998,22069,69932.0,3.2,0.5,produce_summary,"elif(not snp_info[""chr""] == gene_chr):"
+983,22069,69861.5,3.2,0.5,produce_summary,cell_lines = ''
+957,22069,69804.0,3.2,0.5,produce_summary,"""locus"": snps[snp][""locus""],"
+951,22069,69275.5,3.1,0.5,produce_summary,genes_from_file.append(gene)
+1052,22069,68850.5,3.1,0.5,produce_summary,tissue = line[7]
+1051,22069,68088.0,3.1,0.5,produce_summary,gene = line[3]
+946,22069,67849.0,3.1,0.5,produce_summary,snp = row[0]
+952,22069,67655.0,3.1,0.5,produce_summary,tissues_from_file.append(tissue)
+1008,22069,67328.0,3.1,0.5,produce_summary,"to_file.append([snp,"
+974,22069,67200.0,3.0,0.5,produce_summary,max_length = gene_stat[2] - gene_stat[1]
+953,22069,66806.5,3.0,0.5,produce_summary,snps_from_file.append(snp)
+996,22069,66790.5,3.0,0.5,produce_summary,"if(gene_chr == ""NA""):"
+971,22069,66679.0,3.0,0.5,produce_summary,gene_chr = gene_stat[0]
+955,22069,66661.5,3.0,0.5,produce_summary,snp_info = {
+1009,22069,66443.5,3.0,0.5,produce_summary,"snp_info[""chr""],"
+1010,22069,66225.0,3.0,0.5,produce_summary,"snp_info[""locus""],"
+973,22069,66043.5,3.0,0.5,produce_summary,gene_end = gene_stat[2]
+988,22069,65750.0,3.0,0.5,produce_summary,p_thresh = p_thresh
+972,22069,65365.0,3.0,0.5,produce_summary,gene_start = gene_stat[1]
+989,22069,65074.0,2.9,0.5,produce_summary,interaction = True
+1350,22069,64725.0,2.9,5.0,parse_eqtls_files,effect_size = float(row[4])
+995,22069,64534.5,2.9,0.5,produce_summary,distance_from_snp = 0
+990,22069,64373.0,2.9,0.5,produce_summary,if cis:
+984,22069,64297.5,2.9,0.5,produce_summary,try:
+1011,22069,63916.5,2.9,0.5,produce_summary,"gene,"
+975,22069,63834.0,2.9,0.5,produce_summary,if include_p_thresh:
+947,22069,63800.0,2.9,0.5,produce_summary,gene = row[1]
+1013,22069,63672.0,2.9,0.5,produce_summary,"gene_start,"
+1017,22069,63666.5,2.9,0.5,produce_summary,"qvalue,"
+1021,22069,63662.5,2.9,0.5,produce_summary,"interaction,"
+959,22069,63646.5,2.9,0.5,produce_summary,"gene_chr = ""NA"""
+950,22069,63621.5,2.9,0.5,produce_summary,effect_size = row[4]
+1012,22069,63569.0,2.9,0.5,produce_summary,"gene_chr,"
+1016,22069,63542.5,2.9,0.5,produce_summary,"p_val,"
+948,22069,63542.0,2.9,0.5,produce_summary,tissue = row[2]
+1015,22069,63520.0,2.9,0.5,produce_summary,"tissue,"
+1019,22069,63501.5,2.9,0.5,produce_summary,"to_cell_line,"
+1018,22069,63496.0,2.9,0.5,produce_summary,"effect_size,"
+1014,22069,63437.5,2.9,0.5,produce_summary,"gene_end,"
+978,22069,63373.0,2.9,0.5,produce_summary,"p_thresh = ""NA"""
+949,22069,63337.5,2.9,0.5,produce_summary,p_val = row[3]
+1020,22069,63317.0,2.9,0.5,produce_summary,"p_thresh,"
+962,22069,62766.0,2.8,0.5,produce_summary,max_length = 0
+960,22069,62337.5,2.8,0.5,produce_summary,"gene_start = ""NA"""
+961,22069,62168.5,2.8,0.5,produce_summary,"gene_end = ""NA"""
+993,21019,61812.0,2.9,0.5,produce_summary,interaction = False
+1352,22069,47305.5,2.1,3.6,parse_eqtls_files,if not snp in snps:
+1405,22070,47177.5,2.1,3.6,parse_eqtls_files,for i in range(len(p_values)):
+1347,22069,44360.0,2.0,3.4,parse_eqtls_files,snp = row[0]
+1349,22069,40906.0,1.9,3.1,parse_eqtls_files,tissue = row[2]
+1348,22069,40896.5,1.9,3.1,parse_eqtls_files,gene = row[1]
+999,12318,36634.0,3.0,0.3,produce_summary,"distance_from_snp = ""NA""  # Not applicable to trans interactions"
+981,9751,31350.0,3.2,0.2,produce_summary,"(snp_info[""locus""] > gene_start - 1000000) and"
+1000,9751,30297.0,3.1,0.2,produce_summary,"elif(snp_info[""locus""] < gene_start):"
+1037,1,21247.5,21247.5,0.2,produce_summary,"hic_data = pool.map(calc_hic_contacts, snps_genes)"
+1001,6056,18780.0,3.1,0.1,produce_summary,"distance_from_snp = gene_start - snp_info[""locus""]"
+982,4383,13834.5,3.2,0.1,produce_summary,"(snp_info[""locus""] < gene_end + 1000000))"
+1003,3695,11446.0,3.1,0.1,produce_summary,"distance_from_snp = snp_info[""locus""] - gene_end"
+1002,3695,11437.5,3.1,0.1,produce_summary,"elif(snp_info[""locus""] > gene_end):"
+1283,2018,6673.0,3.3,14.4,parse_genes_files,for row in greader:
+1288,2017,4512.0,2.2,9.7,parse_genes_files,interactions_replicates = len(row[4].split())
+1294,2017,4126.0,2.0,8.9,parse_genes_files,'rep_present': interactions_replicates}
+1287,2017,4075.5,2.0,8.8,parse_genes_files,interactions = int(row[3])
+1289,2017,3933.0,1.95,8.5,parse_genes_files,replicates_count = int(row[5])
+1046,627,3314.0,5.3,0.0,produce_summary,gene_exp_extr[genes_from_file[i]] = gene_expression_extremes[i]
+991,1050,3115.0,3.0,0.0,produce_summary,interaction = True
+1040,627,2967.5,4.7,0.0,produce_summary,hic_dict[snps_genes[i]] = hic_data[i]
+1045,628,2911.0,4.6,0.0,produce_summary,for i in range(len(genes_from_file)):
+1400,1,2796.0,2796.0,0.2,parse_eqtls_files,"shutil.copyfileobj(efile, joined_eqtl_file)"
+1291,2017,2717.0,1.3,5.9,parse_genes_files,genes[snp][gene][cell_line] = {
+1039,628,2560.0,4.1,0.0,produce_summary,for i in range(len(snps_genes)):
+1284,2017,2501.5,1.2,5.4,parse_genes_files,gene = row[1]
+1025,1,2249.5,2249.5,0.0,produce_summary,genes_from_file = dict.fromkeys(genes_from_file).keys()
+1292,2017,2241.0,1.1,4.8,parse_genes_files,"'interactions': interactions,"
+1290,2017,2220.5,1.1,4.8,parse_genes_files,try:
+1285,2017,2161.0,1.1,4.6,parse_genes_files,snp = row[0]
+1286,2017,2137.5,1.1,4.6,parse_genes_files,cell_line = row[2]
+1293,2017,2132.0,1.1,4.6,parse_genes_files,"'replicates': replicates_count,"
+1005,627,2079.0,3.3,0.0,produce_summary,gene_exp[gene] = {}
+1036,629,2052.0,3.3,0.0,produce_summary,"snps_genes = [(snp, gene) for snp in snps_from_file for gene in genes_from_file]"
+940,1,1830.5,1830.5,0.0,produce_summary,bar  = progressbar.ProgressBar(max_value = progressbar.UnknownLength)
+1028,1,1259.5,1259.5,0.0,produce_summary,current_process = psutil.Process()
+1026,1,1256.5,1256.5,0.0,produce_summary,tissues_from_file = dict.fromkeys(tissues_from_file).keys()
+1295,663,1102.5,1.7,2.4,parse_genes_files,except KeyError:
+1027,1,991.0,991.0,0.0,produce_summary,snps_from_file = dict.fromkeys(snps_from_file).keys()
+1303,663,966.5,1.5,2.1,parse_genes_files,'rep_present': interactions_replicates}
+1299,663,941.0,1.4,2.0,parse_genes_files,genes[snp][gene] = {}
+1298,663,852.0,1.3,1.8,parse_genes_files,if not gene in genes[snp]:
+1300,663,844.5,1.3,1.8,parse_genes_files,genes[snp][gene][cell_line] = {
+1296,663,812.0,1.2,1.7,parse_genes_files,if not snp in genes:
+1391,2,803.0,401.5,0.1,parse_eqtls_files,conn.close()
+1301,663,742.0,1.1,1.6,parse_genes_files,"'interactions': interactions,"
+1302,663,706.0,1.1,1.5,parse_genes_files,"'replicates': replicates_count,"
+1370,1,361.5,361.5,0.0,parse_eqtls_files,"snp_index.execute(""SELECT * FROM snps WHERE rsID=?"", (snp,))"
+928,5,344.5,68.9,0.0,produce_summary,"for res in gene_index_db.execute(""PRAGMA table_info(genes)"")]"
+1379,2,233.0,116.5,0.0,parse_eqtls_files,"lib_fp, enzyme, 'dna.fragments.db'))"
+1320,1,223.5,223.5,0.0,parse_eqtls_files,snp_dp = sqlite3.connect(snp_database_fp)
+1397,1,152.5,152.5,0.0,parse_eqtls_files,"joined_eqtl_file = open(os.path.join(output_dir, 'eqtls.txt'), 'w')"
+925,1,131.5,131.5,0.0,produce_summary,gene_index_db = sqlite3.connect(gene_database_fp)
+897,1,118.0,118.0,0.0,produce_summary,"summary = open(output_dir + ""/summary.txt"", 'w')"
+1394,1,101.5,101.5,0.0,parse_eqtls_files,snp_dp.close()
+1029,1,90.0,90.0,0.0,produce_summary,num_processes = len(current_process.cpu_affinity())
+1323,1,76.0,76.0,0.0,parse_eqtls_files,gene_dp = sqlite3.connect(gene_database_fp)
+895,1,70.0,70.0,0.0,produce_summary,if not os.path.isdir(output_dir):
+922,1,63.0,63.0,0.0,produce_summary,"sig_file = open(os.path.join(output_dir, 'significant_eqtls.txt'), 'w')"
+938,1,58.0,58.0,0.0,produce_summary,"eqtlfile = open(os.path.join(output_dir, 'eqtls.txt'), 'r')"
+1065,1,49.0,49.0,0.0,produce_summary,sig_file.close()
+1064,1,43.0,43.0,0.0,produce_summary,summary.close()
+1332,1,42.0,42.0,0.0,parse_eqtls_files,"if os.path.isfile(os.path.join(file_path, 'genes.txt')):"
+1403,1,33.0,33.0,0.0,parse_eqtls_files,print('Adjusting p values...')
+921,1,30.0,30.0,0.0,produce_summary,summ_writer.writerow(summ_header)
+1335,1,29.0,29.0,0.0,parse_eqtls_files,"genes_files.append(os.path.isfile(os.path.join(file_path, 'genes.txt')))"
+898,1,26.0,26.0,0.0,produce_summary,"summ_writer = csv.writer(summary, delimiter='\t')"
+1353,1,25.0,25.0,0.0,parse_eqtls_files,"if os.path.isfile(os.path.join(file_path, 'snps.txt')):"
+924,1,20.0,20.0,0.0,produce_summary,sigwriter.writerow(summ_header)
+1390,2,18.5,9.25,0.0,parse_eqtls_files,cur.close()
+1282,1,17.0,17.0,0.0,parse_genes_files,"greader = csv.reader(genefile, delimiter = '\t')"
+1392,1,17.0,17.0,0.0,parse_eqtls_files,eqtlfile.close()
+1399,1,16.0,16.0,0.0,parse_eqtls_files,"with open(eqtls_file, 'r') as efile:"
+1381,2,16.0,8.0,0.0,parse_eqtls_files,cur = conn.cursor()
+1311,1,14.0,14.0,0.0,parse_eqtls_files,"print(""Parsing eQTLs..."")"
+1343,1,14.0,14.0,0.0,parse_eqtls_files,"eqtlfile =  open(eqtls_file, 'r')"
+1330,1,13.0,13.0,0.0,parse_eqtls_files,"print('\tParsing eQTL file {} of {}'.format(file_count, len(eqtls_files)))"
+1387,2,12.0,6.0,0.0,parse_eqtls_files,snps[snp]['fragments'].append({
+926,1,12.0,12.0,0.0,produce_summary,gene_index_db.text_factory = str
+939,1,11.5,11.5,0.0,produce_summary,"ereader = csv.reader(eqtlfile, delimiter = '\t')"
+1281,1,11.0,11.0,0.0,parse_genes_files,"genefile = open(gene_file, 'r')"
+1389,2,11.0,5.5,0.0,parse_eqtls_files,'enzyme': enzyme})
+1407,1,10.0,10.0,0.0,parse_eqtls_files,"return (p_values_map, snps, genes)"
+1321,1,10.0,10.0,0.0,parse_eqtls_files,snp_dp.text_factory = str
+1322,1,10.0,10.0,0.0,parse_eqtls_files,snp_index = snp_dp.cursor()
+1371,1,10.0,10.0,0.0,parse_eqtls_files,from_db = snp_index.fetchone()
+1380,2,10.0,5.0,0.0,parse_eqtls_files,conn.text_factory = str
+1377,3,9.0,3.0,0.0,parse_eqtls_files,for enzyme in enzymes:
+1378,2,9.0,4.5,0.0,parse_eqtls_files,conn = sqlite3.connect(os.path.join(
+1393,1,9.0,9.0,0.0,parse_eqtls_files,snp_index.close()
+1376,3,8.0,2.7,0.0,parse_eqtls_files,enzymes = [e.strip() for e in enzymes]
+1044,1,7.0,7.0,0.0,produce_summary,gene_exp_extr = {}
+920,1,7.0,7.0,0.0,produce_summary,'Min_Expression_Level']
+1038,1,6.0,6.0,0.0,produce_summary,hic_dict = {}
+1398,2,6.0,3.0,0.0,parse_eqtls_files,for eqtls_file in eqtls_files:
+1344,1,6.0,6.0,0.0,parse_eqtls_files,"ereader = csv.reader(eqtlfile, delimiter='\t')"
+923,1,6.0,6.0,0.0,produce_summary,"sigwriter = csv.writer(sig_file, delimiter='\t')"
+1328,2,5.0,2.5,0.0,parse_eqtls_files,for eqtls_file in eqtls_files:
+1384,2,5.0,2.5,0.0,parse_eqtls_files,"""AND start<=? AND end>=?"", (snps[snp]['chr'],"
+937,1,5.0,5.0,0.0,produce_summary,gene_exp = {}
+1280,2,4.0,2.0,0.0,parse_genes_files,for gene_file in genes_files.split(' '):
+1375,1,4.0,4.0,0.0,parse_eqtls_files,"enzymes = restriction_enzymes.split(',')"
+1382,2,4.0,2.0,0.0,parse_eqtls_files,cur.execute(
+1383,2,4.0,2.0,0.0,parse_eqtls_files,"""SELECT fragment FROM fragments WHERE chr=? ""+\"
+1385,2,4.0,2.0,0.0,parse_eqtls_files,"snps[snp]['locus'],"
+893,1,4.0,4.0,0.0,produce_summary,genes_global = genes
+929,1,4.0,4.0,0.0,produce_summary,"include_p_thresh = ""p_thresh"" in col_names"
+1066,1,3.0,3.0,0.0,produce_summary,return (num_sig)
+1312,1,3.0,3.0,0.0,parse_eqtls_files,eqtls = {}
+1324,1,3.0,3.0,0.0,parse_eqtls_files,gene_dp.text_factory = str
+1325,1,3.0,3.0,0.0,parse_eqtls_files,gene_index = snp_dp.cursor()
+1329,1,3.0,3.0,0.0,parse_eqtls_files,file_path = eqtls_file[:len(eqtls_file)-9]
+1402,1,3.0,3.0,0.0,parse_eqtls_files,p_values_map = {}
+1372,1,3.0,3.0,0.0,parse_eqtls_files,"snps[snp] = {'chr': from_db[1],"
+894,1,3.0,3.0,0.0,produce_summary,num_sig = {}  # Number of eQTLs deemed significant under the given threshold
+899,1,3.0,3.0,0.0,produce_summary,"summ_header = ['SNP',"
+900,1,3.0,3.0,0.0,produce_summary,"'SNP_Chromosome',"
+901,1,3.0,3.0,0.0,produce_summary,"'SNP_Locus',"
+902,1,3.0,3.0,0.0,produce_summary,"'Gene_Name',"
+903,1,3.0,3.0,0.0,produce_summary,"'Gene_Chromosome',"
+904,1,3.0,3.0,0.0,produce_summary,"'Gene_Start',"
+905,1,3.0,3.0,0.0,produce_summary,"'Gene_End',"
+906,1,3.0,3.0,0.0,produce_summary,"'Tissue',"
+907,1,3.0,3.0,0.0,produce_summary,"'p-value',"
+908,1,3.0,3.0,0.0,produce_summary,"'Adj_p-value',"
+909,1,3.0,3.0,0.0,produce_summary,"'Effect_Size',"
+910,1,3.0,3.0,0.0,produce_summary,"'Cell_Lines',"
+911,1,3.0,3.0,0.0,produce_summary,"'Cell_Lines_HiC_scores',"
+912,1,3.0,3.0,0.0,produce_summary,"'HiC_Contact_Score',"
+913,1,3.0,3.0,0.0,produce_summary,"'GTEx_cis_p_Threshold',"
+914,1,3.0,3.0,0.0,produce_summary,"'cis_SNP-gene_interaction',"
+915,1,3.0,3.0,0.0,produce_summary,"'SNP-gene_Distance',"
+916,1,3.0,3.0,0.0,produce_summary,"'Expression_Level_In_eQTL_Tissue',"
+917,1,3.0,3.0,0.0,produce_summary,"'Max_Expressed_Tissue',"
+918,1,3.0,3.0,0.0,produce_summary,"'Maximum_Expression_Level',"
+919,1,3.0,3.0,0.0,produce_summary,"'Min_Expressed_Tissue',"
+927,1,3.0,3.0,0.0,produce_summary,col_names = [res[1]
+930,1,3.0,3.0,0.0,produce_summary,if include_p_thresh:
+933,1,3.0,3.0,0.0,produce_summary,"query_str = ""SELECT chr, start, end FROM genes WHERE symbol=?"""
+941,1,3.0,3.0,0.0,produce_summary,to_file = []
+942,1,3.0,3.0,0.0,produce_summary,genes_from_file = []
+943,1,3.0,3.0,0.0,produce_summary,tissues_from_file = []
+944,1,3.0,3.0,0.0,produce_summary,snps_from_file = []
+1297,1,2.0,2.0,0.0,parse_genes_files,genes[snp] = {}
+1313,1,2.0,2.0,0.0,parse_eqtls_files,snps = {}
+1314,1,2.0,2.0,0.0,parse_eqtls_files,genes = {}
+1315,1,2.0,2.0,0.0,parse_eqtls_files,p_values = []  # A sorted list of all p-values for use computing FDR
+1316,1,2.0,2.0,0.0,parse_eqtls_files,num_tests = 0  # Total number of tests done
+1317,1,2.0,2.0,0.0,parse_eqtls_files,num_sig = {}  # Number of eQTLs deemed significant under the given threshold
+1326,1,2.0,2.0,0.0,parse_eqtls_files,file_count = 1
+1327,1,2.0,2.0,0.0,parse_eqtls_files,genes_files = []
+1331,1,2.0,2.0,0.0,parse_eqtls_files,file_count += 1
+1373,1,2.0,2.0,0.0,parse_eqtls_files,"'locus': from_db[2],"
+1374,1,2.0,2.0,0.0,parse_eqtls_files,'fragments': []} #Handle fragments from multiple REs
+1279,1,1.0,1.0,0.0,parse_genes_files,genes = {}
+1305,1,1.0,1.0,0.0,parse_genes_files,return genes
