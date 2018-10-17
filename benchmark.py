@@ -80,6 +80,12 @@ def main():
                 ]))
         with open('codes3d/codes3d.py', 'r') as codes3d_script:
             codes3d_lines = codes3d_script.read().splitlines()
+        profile_count = dict() 
+        count = 0
+        for i in range(len(codes3d_lines)):
+            if '@profile' in codes3d_lines[i]: 
+                count += 1
+            profile_count[i+1] = count
         for i in range(len(codes3d_lines)):
             codes3d_lines[i] = codes3d_lines[i].strip('\t ')
         code_lines_dict = dict()
@@ -95,27 +101,25 @@ def main():
                 code_lines_dict[code_line[0]][i].append(code_line[i+1])
         code_lines_summary = list()
         for code_line in code_lines_dict.keys():
-            try:
-                code_lines_summary.append(list([
-                    code_line,
-                    code_lines_dict[code_line][0],
-                    median(code_lines_dict[code_line][1]),
-                    median(code_lines_dict[code_line][2]),
-                    median(code_lines_dict[code_line][3]),
-                    code_lines_dict[code_line][4],
-                    code_lines_dict[code_line][5]]))
-            except:
-                continue
+            corrected_code_line = str(int(code_line) - profile_count[code_line])
+            code_lines_summary.append(list([
+                corrected_code_line,
+                code_lines_dict[code_line][0],
+                median(code_lines_dict[code_line][1]),
+                median(code_lines_dict[code_line][2]),
+                median(code_lines_dict[code_line][3]),
+                code_lines_dict[code_line][4],
+                code_lines_dict[code_line][5]]))
         functions_summary.sort(key=lambda function: function[1], reverse=True)
         code_lines_summary.sort(key=lambda code_line: code_line[2], reverse=True)
         timestamp = strftime("%d%m-%H%M%S")
         with open('benchmarks/functions_' + timestamp + '.csv', 'wb') as function_file:
-            function_writer = csv_writer(function_file, delimiter='\t')
+            function_writer = csv_writer(function_file, delimiter=',')
             function_writer.writerow(['Function', 'Execution Time', '% Total Execution Time', 'File'])
             for function in functions_summary:
                 function_writer.writerow(function)
         with open('benchmarks/lines_' + timestamp + '.csv', 'wb') as line_file:
-            line_writer = csv_writer(line_file, delimiter='\t')
+            line_writer = csv_writer(line_file, delimiter=',')
             line_writer.writerow(['Line', 'Times Executed', 'Total Execution Time', 'Time per Execution', '% of Function Execution Time', 'Function', 'Code'])
             for code_line in code_lines_summary:
                         line_writer.writerow(code_line)

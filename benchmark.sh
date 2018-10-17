@@ -37,10 +37,8 @@ for RUN_NO in $(seq 1 $NUM_RUNS); do
     #        rm  "error_logs/stderr_$RUN_NO"
     #fi
 done
-if [ TEMP ]
+if ! (( TEMP ))
     then 
-        : 
-    else 
         echo "PROCESSING BENCHMARK RESULTS"
         python benchmark.py --compile $TEMP_FILES 
         echo "PROCESSED BENCHMARK RESULTS"
