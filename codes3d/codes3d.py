@@ -853,7 +853,7 @@ def get_tissue_expression(gene_tissue_tpl):
     
 def produce_summary(
         p_values, snps, genes, gene_database_fp,
-        expression_table_fp, fdr_threshold, output_dir):    
+        expression_table_fp, fdr_threshold, output_dir, buffer_size):    
     """Write final results of eQTL-eGene associations
 
     Args:
@@ -894,8 +894,7 @@ def produce_summary(
     num_sig = {}  # Number of eQTLs deemed significant under the given threshold
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
-    summary = open(output_dir + "/summary.txt", 'w')
-    summ_writer = csv.writer(summary, delimiter='\t')
+    summary = open(output_dir + "/summary.txt", 'w', buffering=buffer_size)
     summ_header = ['SNP',
                    'SNP_Chromosome',
                    'SNP_Locus',
@@ -918,10 +917,10 @@ def produce_summary(
                    'Maximum_Expression_Level',
                    'Min_Expressed_Tissue',
                    'Min_Expression_Level']
-    summ_writer.writerow(summ_header)
-    sig_file = open(os.path.join(output_dir, 'significant_eqtls.txt'), 'w')
-    sigwriter = csv.writer(sig_file, delimiter='\t')
-    sigwriter.writerow(summ_header)    
+    summ_header_joined = ''.join(('\t'.join(summ_header), '\n'))
+    summary.write(summ_header_joined)
+    sig_file = open(os.path.join(output_dir, 'significant_eqtls.txt'), 'w', buffering=buffer_size)
+    sig_file.write(summ_header_joined)    
     gene_index_db = sqlite3.connect(gene_database_fp)
     gene_index_db.text_factory = str
     col_names = [res[1]
@@ -935,7 +934,7 @@ def produce_summary(
     global gene_exp
     gene_df = pandas.read_table(expression_table_fp, index_col="Description", engine='c', compression=None, memory_map=True)
     gene_exp = {} 
-    eqtlfile = open(os.path.join(output_dir, 'eqtls.txt'), 'r')
+    eqtlfile = open(os.path.join(output_dir, 'eqtls.txt'), 'r', buffering=buffer_size)
     ereader = csv.reader(eqtlfile, delimiter = '\t')
     bar  = progressbar.ProgressBar(max_value = progressbar.UnknownLength)
     to_file = [] 
@@ -960,8 +959,8 @@ def produce_summary(
         gene_start = "NA"
         gene_end = "NA"
         max_length = 0
-
-        gene_stat = gene_index_db.execute(query_str, [gene]).fetchone()
+ 
+        gene_stat = gene_index_db.execute(query_str, (gene,)).fetchone()
         # Consider "canonical" to be the longest record where
         # multiple records are present
         if abs(gene_stat[2] - gene_stat[1]) > max_length:
@@ -1025,26 +1024,32 @@ def produce_summary(
     genes_from_file = dict.fromkeys(genes_from_file).keys()
     tissues_from_file = dict.fromkeys(tissues_from_file).keys()
     snps_from_file = dict.fromkeys(snps_from_file).keys()
-    current_process = psutil.Process()
-    num_processes = len(current_process.cpu_affinity())
     genes_tissues = [(gene, tissue) for gene in genes_from_file for tissue in tissues_from_file]
-    pool = multiprocessing.Pool(processes=num_processes)
-    gene_tissue_expression_extremes = pool.map(get_tissue_expression, genes_tissues)
-    for i in range(len(genes_tissues)):
-        gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = gene_tissue_expression_extremes[i]
-
     snps_genes = [(snp, gene) for snp in snps_from_file for gene in genes_from_file]
+    
+    current_process = psutil.Process()
+    pool = multiprocessing.Pool(processes=len(current_process.cpu_affinity()))
+
+    print "Collecting HiC data..." 
     hic_data = pool.map(calc_hic_contacts, snps_genes)
     hic_dict = {} 
     for i in range(len(snps_genes)):
         hic_dict[snps_genes[i]] = hic_data[i]
 
-    pool = multiprocessing.Pool(processes=num_processes) 
+    print "Collecting tissue-specific gene expression rates..." 
+    gene_tissue_expression_extremes = pool.map(get_tissue_expression, genes_tissues)
+    for i in range(len(genes_tissues)):
+        gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = gene_tissue_expression_extremes[i]
+
+    print "Collecting gene expression extremes..."
+    pool = multiprocessing.Pool(processes=len(current_process.cpu_affinity()))
     gene_expression_extremes = pool.map(get_gene_expression_extremes, genes_from_file)
     gene_exp_extr = {} 
     for i in range(len(genes_from_file)):
         gene_exp_extr[genes_from_file[i]] = gene_expression_extremes[i]
-
+    
+    summ_data = []
+    sig_data = []
 
     for line in to_file:
         snp = line[0]
@@ -1054,13 +1059,16 @@ def produce_summary(
         line.insert(13, hic_dict[(snp, gene)][1])
         line.append(gene_exp[gene][tissue])
         line.extend(gene_exp_extr[gene])
-        summ_writer.writerow(line)
+        line_joined = '\t'.join([str(entry) for entry in line])
+        summ_data.append(line_joined)
         if line[9] < fdr_threshold:
             try:
                 num_sig[snp] += 1
             except KeyError:
                 num_sig[snp] = 1
-            sigwriter.writerow(line)
+            sig_data.append(line_joined)
+    summary.write('\n'.join(summ_data))
+    sig_file.write('\n'.join(sig_data))
     summary.close()
     sig_file.close()
     return (num_sig)

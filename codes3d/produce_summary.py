@@ -26,6 +26,10 @@ if __name__ == "__main__":
             "-f","--fdr_threshold",type=float,default=0.05,
             help="The FDR threshold to consider an eQTL statistically "+\
             "significant (default: 0.05).")
+    parser.add_argument(
+            "-b","--buffer_size",type=int,default=8192,
+            help="The buffer size applied to file I/O during compilation "+\
+            " (default: 8192).")
     args = parser.parse_args()
     config = configparser.ConfigParser()
     config.read(args.config)
@@ -50,4 +54,4 @@ if __name__ == "__main__":
         restriction_enzymes, lib_fp, args.output_dir, args.fdr_threshold)
     codes3d.produce_summary(
         p_values, snps, genes, gene_database_fp, expression_table_fp,
-        args.fdr_threshold, args.output_dir)
+        args.fdr_threshold, args.output_dir, args.buffer_size)
