@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 from sys import argv
 from csv import writer as csv_writer
 from numpy import median
