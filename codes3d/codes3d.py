@@ -31,7 +31,6 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 from matplotlib import style
 from matplotlib.ticker import FuncFormatter
-import progressbar
 import rpy2.robjects as R
 
 
@@ -840,16 +839,22 @@ def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
         sep='\t')
 
 def get_gene_expression_extremes(gene):
-    global gene_exp
-    return max(gene_exp[gene].iteritems(), key=operator.itemgetter(1)) + min(gene_exp[gene].iteritems(), key=operator.itemgetter(1))
+    try:
+        max_expression = max(gene_exp[gene].iteritems(), key=lambda exp: max(exp[1]))
+        min_expression = min(gene_exp[gene].iteritems(), key=lambda exp: min(exp[1]))
+        return tuple([max_expression[0], max(max_expression[1]), min_expression[0], min(min_expression[1])])
+    except KeyError:
+        return tuple(['NA', 'NA', 'NA', 'NA'])
 
 def get_tissue_expression(gene_tissue_tpl):
     global gene_df
     try:
-        return gene_df.at[gene_tissue_tpl[0], gene_tissue_tpl[1]].max()
+        return tuple(gene_df.at[gene_tissue_tpl[0], gene_tissue_tpl[1]])
+    except TypeError: 
+        return  tuple([gene_df.at[gene_tissue_tpl[0], gene_tissue_tpl[1]]])
     except:
         print("\t\tWarning: No expression information for %s in %s" % (gene, tissue))
-        return 'NA'
+        return None 
     
 def produce_summary(
         p_values, snps, genes, gene_database_fp,
@@ -895,6 +900,7 @@ def produce_summary(
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
     summary = open(output_dir + "/summary.txt", 'w', buffering=buffer_size)
+    summ_writer = csv.writer(summary, delimiter='\t')
     summ_header = ['SNP',
                    'SNP_Chromosome',
                    'SNP_Locus',
@@ -917,10 +923,10 @@ def produce_summary(
                    'Maximum_Expression_Level',
                    'Min_Expressed_Tissue',
                    'Min_Expression_Level']
-    summ_header_joined = ''.join(('\t'.join(summ_header), '\n'))
-    summary.write(summ_header_joined)
+    summ_writer.writerow(summ_header)
     sig_file = open(os.path.join(output_dir, 'significant_eqtls.txt'), 'w', buffering=buffer_size)
-    sig_file.write(summ_header_joined)    
+    sigwriter = csv.writer(sig_file, delimiter='\t')
+    sigwriter.writerow(summ_header) 
     gene_index_db = sqlite3.connect(gene_database_fp)
     gene_index_db.text_factory = str
     col_names = [res[1]
@@ -936,10 +942,8 @@ def produce_summary(
     gene_exp = {} 
     eqtlfile = open(os.path.join(output_dir, 'eqtls.txt'), 'r', buffering=buffer_size)
     ereader = csv.reader(eqtlfile, delimiter = '\t')
-    bar  = progressbar.ProgressBar(max_value = progressbar.UnknownLength)
     to_file = [] 
     genes_from_file = []
-    tissues_from_file = [] 
     snps_from_file = [] 
     for i, row in enumerate(ereader,1):
         snp = row[0]
@@ -948,7 +952,6 @@ def produce_summary(
         p_val = row[3]
         effect_size = row[4]
         genes_from_file.append(gene)
-        tissues_from_file.append(tissue)
         snps_from_file.append(snp)
         qvalue = p_values[float(p_val)]
         snp_info = {
@@ -1019,12 +1022,11 @@ def produce_summary(
                    p_thresh,
                    interaction,
                    distance_from_snp])
-        bar.update(i)
 
+    all_tissues = list(gene_df) 
     genes_from_file = dict.fromkeys(genes_from_file).keys()
-    tissues_from_file = dict.fromkeys(tissues_from_file).keys()
     snps_from_file = dict.fromkeys(snps_from_file).keys()
-    genes_tissues = [(gene, tissue) for gene in genes_from_file for tissue in tissues_from_file]
+    genes_tissues = [(gene, tissue) for gene in genes_from_file for tissue in all_tissues]
     snps_genes = [(snp, gene) for snp in snps_from_file for gene in genes_from_file]
     
     current_process = psutil.Process()
@@ -1039,36 +1041,29 @@ def produce_summary(
     print "Collecting tissue-specific gene expression rates..." 
     gene_tissue_expression_extremes = pool.map(get_tissue_expression, genes_tissues)
     for i in range(len(genes_tissues)):
-        gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = gene_tissue_expression_extremes[i]
+        if gene_tissue_expression_extremes[i] > 0.0: 
+            gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = gene_tissue_expression_extremes[i]
 
     print "Collecting gene expression extremes..."
-    pool = multiprocessing.Pool(processes=len(current_process.cpu_affinity()))
-    gene_expression_extremes = pool.map(get_gene_expression_extremes, genes_from_file)
-    gene_exp_extr = {} 
-    for i in range(len(genes_from_file)):
-        gene_exp_extr[genes_from_file[i]] = gene_expression_extremes[i]
+    for gene in genes_from_file:
+        gene_exp[gene]['extremes'] = get_gene_expression_extremes(gene)  
     
-    summ_data = []
-    sig_data = []
-
+    print "Writing to summary files..." 
     for line in to_file:
         snp = line[0]
         gene = line[3]
         tissue = line[7]
         line.insert(12, hic_dict[(snp, gene)][0])
-        line.insert(13, hic_dict[(snp, gene)][1])
-        line.append(gene_exp[gene][tissue])
-        line.extend(gene_exp_extr[gene])
-        line_joined = '\t'.join([str(entry) for entry in line])
-        summ_data.append(line_joined)
+        line.insert(12, hic_dict[(snp, gene)][1])
+        line.append(max(gene_exp[gene][tissue]))
+        line.extend(gene_exp[gene]['extremes'])
+        summ_writer.writerow(line)
         if line[9] < fdr_threshold:
             try:
                 num_sig[snp] += 1
             except KeyError:
                 num_sig[snp] = 1
-            sig_data.append(line_joined)
-    summary.write('\n'.join(summ_data))
-    sig_file.write('\n'.join(sig_data))
+            sigwriter.writerow(line)
     summary.close()
     sig_file.close()
     return (num_sig)

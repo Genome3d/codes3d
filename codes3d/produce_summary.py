@@ -27,7 +27,7 @@ if __name__ == "__main__":
             help="The FDR threshold to consider an eQTL statistically "+\
             "significant (default: 0.05).")
     parser.add_argument(
-            "-b","--buffer_size",type=int,default=8192,
+            "-b","--buffer_size",type=int,default=65536,
             help="The buffer size applied to file I/O during compilation "+\
             " (default: 8192).")
     args = parser.parse_args()
