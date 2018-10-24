@@ -3,3 +3,4 @@ lib
 codes3d_summary/
 benchmark.sh
 benchmark.py
+.gitignore
