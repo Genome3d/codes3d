@@ -1,9 +1,4 @@
 lib/
 lib
-benchmarks/
-benchmark.sh
-benchmark.py
-buffersize/
-buffersize.sh
 codes3d_summary/
 
