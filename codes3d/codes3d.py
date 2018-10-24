@@ -13,8 +13,9 @@ import operator
 import os
 import sys
 import pandas
-import pybedtools
+import progressbar
 import psutil
+import pybedtools
 import re
 import requests
 import shutil
@@ -841,17 +842,17 @@ def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
 def get_gene_expression_extremes(gene):
     try:
         max_expression = max(gene_exp[gene].iteritems(), key=lambda exp: max(exp[1]))
-        min_expression = min(gene_exp[gene].iteritems(), key=lambda exp: min(exp[1]))
-        return tuple([max_expression[0], max(max_expression[1]), min_expression[0], min(min_expression[1])])
     except KeyError:
         return tuple(['NA', 'NA', 'NA', 'NA'])
+    min_expression = min(gene_exp[gene].iteritems(), key=lambda exp: min(exp[1]))
+    return tuple([max_expression[0], max(max_expression[1]), min_expression[0], min(min_expression[1])])
 
 def get_tissue_expression(gene_tissue_tpl):
     global gene_df
     try:
-        return tuple(gene_df.at[gene_tissue_tpl[0], gene_tissue_tpl[1]])
+        return list(gene_df.at[gene_tissue_tpl[0], gene_tissue_tpl[1]])
     except TypeError: 
-        return  tuple([gene_df.at[gene_tissue_tpl[0], gene_tissue_tpl[1]]])
+        return  list([gene_df.at[gene_tissue_tpl[0], gene_tissue_tpl[1]]])
     except:
         print("\t\tWarning: No expression information for %s in %s" % (gene, tissue))
         return None 
@@ -896,6 +897,8 @@ def produce_summary(
     """
     global genes_global
     genes_global = genes
+    bar = progressbar.ProgressBar(max_value=10)
+    bar.update(0)
     num_sig = {}  # Number of eQTLs deemed significant under the given threshold
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
@@ -945,7 +948,7 @@ def produce_summary(
     to_file = [] 
     genes_from_file = []
     snps_from_file = [] 
-    for i, row in enumerate(ereader,1):
+    for row in ereader:
         snp = row[0]
         gene = row[1]
         tissue = row[2]
@@ -1023,6 +1026,8 @@ def produce_summary(
                    interaction,
                    distance_from_snp])
 
+    bar.update(1)
+
     all_tissues = list(gene_df) 
     genes_from_file = dict.fromkeys(genes_from_file).keys()
     snps_from_file = dict.fromkeys(snps_from_file).keys()
@@ -1032,22 +1037,29 @@ def produce_summary(
     current_process = psutil.Process()
     pool = multiprocessing.Pool(processes=len(current_process.cpu_affinity()))
 
-    print "Collecting HiC data..." 
+    print "Computing HiC data..." 
     hic_data = pool.map(calc_hic_contacts, snps_genes)
     hic_dict = {} 
     for i in range(len(snps_genes)):
         hic_dict[snps_genes[i]] = hic_data[i]
 
-    print "Collecting tissue-specific gene expression rates..." 
+    bar.update(2)
+
+    print "Collecting gene expression rates..." 
     gene_tissue_expression_extremes = pool.map(get_tissue_expression, genes_tissues)
     for i in range(len(genes_tissues)):
-        if gene_tissue_expression_extremes[i] > 0.0: 
-            gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = gene_tissue_expression_extremes[i]
+        expressed = filter(lambda x: x > 0.0, gene_tissue_expression_extremes[i])
+        if expressed:
+            gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = expressed 
 
-    print "Collecting gene expression extremes..."
+    bar.update(8)
+
+    print "Determining gene expression extremes..."
     for gene in genes_from_file:
         gene_exp[gene]['extremes'] = get_gene_expression_extremes(gene)  
-    
+  
+    bar.update(9)
+
     print "Writing to summary files..." 
     for line in to_file:
         snp = line[0]
@@ -1066,6 +1078,9 @@ def produce_summary(
             sigwriter.writerow(line)
     summary.close()
     sig_file.close()
+
+    bar.update(10)
+
     return (num_sig)
 
     
