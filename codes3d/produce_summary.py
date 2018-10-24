@@ -29,7 +29,7 @@ if __name__ == "__main__":
     parser.add_argument(
             "-b","--buffer_size",type=int,default=65536,
             help="The buffer size applied to file I/O during compilation "+\
-            " (default: 8192).")
+            " (default: 65536 (65kB)).")
     args = parser.parse_args()
     config = configparser.ConfigParser()
     config.read(args.config)
