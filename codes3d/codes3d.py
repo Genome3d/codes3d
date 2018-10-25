@@ -35,6 +35,7 @@ from matplotlib.ticker import FuncFormatter
 import rpy2.robjects as R
 
 
+@profile
 def parse_parameters(restriction_enzymes, include_cell_line, exclude_cell_line):
     """Validate user parameters -r, -n and -x.
 
@@ -98,6 +99,7 @@ def parse_parameters(restriction_enzymes, include_cell_line, exclude_cell_line):
 
     return res_enzymes, include_cells, exclude_cells
 
+@profile
 def process_inputs(inputs, snp_database_fp, lib_dir,
                    restriction_enzymes, output_dir,
                    suppress_intermediate_files=False):
@@ -236,6 +238,7 @@ def process_inputs(inputs, snp_database_fp, lib_dir,
     return snps
 
 
+@profile
 def find_interactions(
         snps,
         lib_dir,
@@ -346,6 +349,7 @@ def find_interactions(
     return interactions
 
 
+@profile
 def find_genes(
         interactions,
         fragment_database_fp,
@@ -494,6 +498,7 @@ def find_genes(
                                       genes[snp][gene][cell_line]['replicates']))
     return genes
 
+@profile
 def find_eqtls(
         snps,
         genes,
@@ -558,6 +563,7 @@ def find_eqtls(
     
     return num_tests, p_values
 
+@profile
 def query_local_databases(
         eqtl_data_dir, genes, gene_dict_fp, snp_dict_fp, p_values, output_dir):
     """Not used at the moment.
@@ -615,6 +621,7 @@ def query_local_databases(
     snp_dict_db.close()
     return num_tests, to_online_query
 
+@profile
 def query_GTEx_service(
         snps,
         genes,
@@ -714,6 +721,7 @@ def query_GTEx_service(
             failed_requests_file.write(str(failed_requests) + '\n')
     return num_tests
 
+@profile
 def calc_hic_contacts(snp_gene_tpl):
     """Calculates score of HiC contacts between SNP and gene.
 
@@ -741,6 +749,7 @@ def calc_hic_contacts(snp_gene_tpl):
     hic_score = "{:.4f}".format(hic_score)
     return (hic_score, score_list)
 
+@profile
 def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
     """Posts and receives requests from GTEx
 
@@ -822,6 +831,7 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
             return
     s.close()
 
+@profile
 def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
 
     print("Getting gene expression information...")
@@ -839,6 +849,7 @@ def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
         "/gene_expression_table.txt",
         sep='\t')
 
+@profile
 def get_gene_expression_extremes(gene):
     try:
         max_expression = max(gene_exp[gene].iteritems(), key=lambda exp: max(exp[1]))
@@ -847,6 +858,7 @@ def get_gene_expression_extremes(gene):
     min_expression = min(gene_exp[gene].iteritems(), key=lambda exp: min(exp[1]))
     return tuple([max_expression[0], max(max_expression[1]), min_expression[0], min(min_expression[1])])
 
+@profile
 def get_tissue_expression(gene_tissue_tpl):
     global gene_df
     try:
@@ -857,6 +869,7 @@ def get_tissue_expression(gene_tissue_tpl):
         print("\t\tWarning: No expression information for %s in %s" % (gene, tissue))
         return None 
     
+@profile
 def produce_summary(
         p_values, snps, genes, gene_database_fp,
         expression_table_fp, fdr_threshold, output_dir, buffer_size):    
@@ -1084,6 +1097,7 @@ def produce_summary(
     return (num_sig)
 
     
+@profile
 def compute_adj_pvalues(p_values):
     """ A Benjamini-Hochberg adjustment of p values of SNP-gene eQTL
            interactions from GTEx.
@@ -1097,6 +1111,7 @@ def compute_adj_pvalues(p_values):
     return R.r['p.adjust'](p_values, method='BH')
 
 
+@profile
 def produce_overview(genes, eqtls, num_sig, output_dir):
     #TODO: Make compatible without 'eqtls'
     """Generates overview graphs and table
@@ -1190,10 +1205,12 @@ def produce_overview(genes, eqtls, num_sig, output_dir):
     plt.clf()
 
 
+@profile
 def atoi(text):
     return int(text) if text.isdigit() else text
 
 
+@profile
 def natural_keys(text):
     '''
     alist.sort(key=natural_keys) sorts in human order
@@ -1203,10 +1220,12 @@ def natural_keys(text):
     return [atoi(c) for c in re.split('(\d+)', text)]
 
 
+@profile
 def abs_value_ticks(x, pos):
     return abs(x)
 
 
+@profile
 def retrieve_pathways(eqtls, fdr_threshold, num_processes, output_dir):
     print("Retrieving pathway information...")
     manager = multiprocessing.Manager()
@@ -1254,6 +1273,7 @@ def retrieve_pathways(eqtls, fdr_threshold, num_processes, output_dir):
     return pathways
 
 
+@profile
 def get_wikipathways_response(snp, gene, tissue, pwresults):
     wikipathways = wikipathways_api_client.WikipathwaysApiClient()
     kwargs = {
@@ -1265,6 +1285,7 @@ def get_wikipathways_response(snp, gene, tissue, pwresults):
         pwresults.append([snp, gene, tissue, res])
 
 
+@profile
 def parse_snps_files(snps_files):
     snps = {}
     for snp_file in snps_files:
@@ -1276,6 +1297,7 @@ def parse_snps_files(snps_files):
     return snps
 
 
+@profile
 def parse_interactions_files(interactions_files):
     interactions = {}
     for interactions_file in interactions_files:
@@ -1293,6 +1315,7 @@ def parse_interactions_files(interactions_files):
     return interactions
 
 
+@profile
 def parse_genes_files(genes_files):
     genes = {}
     for gene_file in genes_files.split(' '):
@@ -1323,6 +1346,7 @@ def parse_genes_files(genes_files):
     return genes
 
 
+@profile
 def parse_eqtls_files(
         eqtls_files, snp_database_fp, gene_database_fp,
         restriction_enzymes, lib_fp, output_dir, fdr_threshold=0.05):
@@ -1425,6 +1449,7 @@ def parse_eqtls_files(
     return (p_values_map, snps, genes)
 
 
+@profile
 def build_snp_index(
         snp_dir,
         output_fp,
@@ -1506,6 +1531,7 @@ def build_snp_index(
         shutil.rmtree(snp_dir)
 
 
+@profile
 def build_hic_index(
         input_hic_fp,
         output_fp=None,
@@ -1582,6 +1608,7 @@ def build_hic_index(
         os.remove(input_hic_fp)
 
 
+@profile
 def digest_genome(
         genome,
         restriction_enzyme,
@@ -1646,6 +1673,7 @@ def digest_genome(
         build_fragment_index(output_fp, output_db)
 
 
+@profile
 def build_fragment_index(fragment_fp, output_db):
     if not output_db:
         if not fragment_fp.rfind('.') == -1:
@@ -1678,6 +1706,7 @@ def build_fragment_index(fragment_fp, output_db):
     fragment_index_db.commit()
 
 
+@profile
 def build_gene_index(
         gene_files,
         output_bed,
@@ -1870,6 +1899,7 @@ def build_gene_index(
             os.remove(gene_file)
 
 
+@profile
 def build_eqtl_index(
         table_fp,
         output_fp=None,
