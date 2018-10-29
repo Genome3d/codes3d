@@ -531,7 +531,6 @@ def find_eqtls(
     """
     print("Identifying eQTLs of interest...")
     eqtls = {}  # A mapping of SNP-gene eQTL relationships
-    global p_values
     p_values = []  # A sorted list of all p-values for computing FDR
     num_tests = 0  # Total number of tests done
     try:
@@ -951,6 +950,13 @@ def produce_summary(
     eqtlfile = open(os.path.join(output_dir, 'eqtls.txt'), 'r', 
                     buffering=buffer_size_in)
     ereader = csv.reader(eqtlfile, delimiter = '\t')
+    
+    p_values_map = {} 
+    print('Adjusting p-values...')
+    adjusted_p_values = compute_adj_pvalues(p_values)
+    for i in range(len(p_values)):
+        p_values_map[p_values[i]] = adjusted_p_values[i]
+
     to_file = [] 
     genes_from_file = []
     snps_from_file = [] 
@@ -962,7 +968,7 @@ def produce_summary(
         effect_size = row[4]
         genes_from_file.append(gene)
         snps_from_file.append(snp)
-        qvalue = p_values[float(p_val)]
+        qvalue = p_values_map[float(p_val)]
         snp_info = {
             "chr": snps[snp]["chr"],
             "locus": snps[snp]["locus"],
@@ -1419,12 +1425,7 @@ def parse_eqtls_files(
         with open(eqtls_file, 'r') as efile:
             shutil.copyfileobj(efile, joined_eqtl_file)
     
-    p_values_map = {} 
-    print('Adjusting p values...')
-    adjusted_p_values = compute_adj_pvalues(p_values)
-    for i in range(len(p_values)):
-        p_values_map[p_values[i]] = adjusted_p_values[i]
-    return (p_values_map, snps, genes)
+    return (p_values, snps, genes)
 
 
 def build_snp_index(
@@ -1986,10 +1987,10 @@ if __name__ == "__main__":
                         help="Space-separated list of  " +\
                         "restriction enzymes used in HiC data.")
     parser.add_argument("-b","--buffer_size_in",type=int,default=131072,
-                        help="The buffer size applied to file input during " +\
+                        help="Buffer size applied to file input during " +\
                         "compilation (default: 131072).")
     parser.add_argument("-d","--buffer_size_out",type=int,default=1024,
-                        help="The buffer size applied to file input during " +\
+                        help="Buffer size applied to file output during " +\
                         "compilation (default: 1024).")
     parser.add_argument("-t", "--num_processes_summary", type=int, 
                         default=psutil.cpu_count(),
