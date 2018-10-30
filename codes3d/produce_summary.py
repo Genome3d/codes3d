@@ -28,13 +28,13 @@ if __name__ == "__main__":
             help="The FDR threshold to consider an eQTL statistically "+\
             "significant (default: 0.05).")
     parser.add_argument(
-            "-b","--buffer_size_in",type=int,default=131072,
+            "-b","--buffer_size_in",type=int,default=1048576,
             help="Buffer size applied to file input during compilation "+\
-            " (default: 131072).")
+            " (default: 1048576).")
     parser.add_argument(
-            "-d","--buffer_size_out",type=int,default=1024,
+            "-d","--buffer_size_out",type=int,default=1048576,
             help="Buffer size applied to file output during compilation "+\
-            " (default: 1024).")
+            " (default: 1048576).")
     parser.add_argument(
             "-t", "--num_processes_summary", type=int,
             default=psutil.cpu_count(),

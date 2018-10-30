@@ -1986,12 +1986,12 @@ if __name__ == "__main__":
     parser.add_argument("-r", "--restriction_enzymes", nargs='+',
                         help="Space-separated list of  " +\
                         "restriction enzymes used in HiC data.")
-    parser.add_argument("-b","--buffer_size_in",type=int,default=131072,
+    parser.add_argument("-b","--buffer_size_in",type=int,default=1048576,
                         help="Buffer size applied to file input during " +\
-                        "compilation (default: 131072).")
-    parser.add_argument("-d","--buffer_size_out",type=int,default=1024,
+                        "compilation (default: 1048576).")
+    parser.add_argument("-d","--buffer_size_out",type=int,default=1048576,
                         help="Buffer size applied to file output during " +\
-                        "compilation (default: 1024).")
+                        "compilation (default: 1048576).")
     parser.add_argument("-t", "--num_processes_summary", type=int, 
                         default=psutil.cpu_count(),
                         help="The number of processes for compilation of " +\
