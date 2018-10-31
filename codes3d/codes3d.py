@@ -1993,9 +1993,10 @@ if __name__ == "__main__":
                         help="Buffer size applied to file output during " +\
                         "compilation (default: 1048576).")
     parser.add_argument("-t", "--num_processes_summary", type=int, 
-                        default=psutil.cpu_count(),
+                        default=min(psutil.cpu_count(), 32),
                         help="The number of processes for compilation of " +\
-                        "the results (default: %s)." % psutil.cpu_count())
+                        "the results (default: %s)." %
+                        str(min(psutil.cpu_count(), 32)))
     args = parser.parse_args()
     config = configparser.ConfigParser()
     config.read(args.config)
