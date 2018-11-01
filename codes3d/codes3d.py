@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#usr/bin/env python
 
 from itertools import cycle
 import wikipathways_api_client
@@ -711,7 +711,7 @@ def query_GTEx_service(
             failed_requests_file.write(str(failed_requests) + '\n')
     return num_tests
 
-def calc_hic_contacts(snp_gene_tpl):
+def calc_hic_contacts(snp_gene_dict):
     """Calculates score of HiC contacts between SNP and gene.
 
     Args:
@@ -723,14 +723,11 @@ def calc_hic_contacts(snp_gene_tpl):
         hic_score: sum of the averages of contacts per cell line.
         score_list: a list of the means of contacts in each cell line
     """
-    global _genes
-    snp = snp_gene_tpl[0]
-    gene = snp_gene_tpl[1]
     hic_score = 0
     scores = []
-    for cell_line in _genes[snp][gene]:
-        score = _genes[snp][gene][cell_line]['interactions'] \
-            / float(_genes[snp][gene][cell_line]['replicates'])
+    for cell_line in snp_gene_dict:
+        score = snp_gene_dict[cell_line]['interactions'] \
+            / float(snp_gene_dict[cell_line]['replicates'])
         hic_score += score
         scores.append(score)
     score_list = ', '.join(["{:.2f}".format(scores[i]) for i in range(
@@ -837,26 +834,26 @@ def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
         "/gene_expression_table.txt",
         sep='\t')
 
-def get_gene_expression_extremes(gene):
+def get_gene_expression_extremes(gene, gene_exp):
     try:
-        max_expression = max(_gene_exp[gene].iteritems(), 
+        max_expression = max(gene_exp.iteritems(), 
                              key=lambda exp: max(exp[1]))
     except KeyError:
         return tuple(['NA', 'NA', 'NA', 'NA'])
-    min_expression = min(_gene_exp[gene].iteritems(), 
+    min_expression = min(gene_exp.iteritems(), 
                          key=lambda exp: min(exp[1]))
     return tuple([max_expression[0], max(max_expression[1]), min_expression[0], 
                  min(min_expression[1])])
 
 def get_tissue_expression(gene_tissue_tpl):
     try:
-        return list(_gene_df.at[gene_tissue_tpl[0], gene_tissue_tpl[1]])
+        return list(GENE_DF.at[gene_tissue_tpl[0], gene_tissue_tpl[1]])
     except TypeError: 
-        return  list([_gene_df.at[gene_tissue_tpl[0], gene_tissue_tpl[1]]])
+        return  list([GENE_DF.at[gene_tissue_tpl[0], gene_tissue_tpl[1]]])
     except KeyError:
         print("\t\tWarning: No expression information for %s in %s." % (gene, 
                                                                        tissue))
-        return None 
+        return 'NA' 
     
 def produce_summary(
         p_values, snps, genes, gene_database_fp,
@@ -897,8 +894,6 @@ def produce_summary(
         sig_eqtls.text: A file with eQTL associations with
             adj_p_values <= FDR threshold. Same structure as summary.txt
     """
-    global _genes
-    _genes = genes
     num_sig = {} 
     # Number of eQTLs deemed significant under the given threshold
     if not os.path.isdir(output_dir):
@@ -942,11 +937,7 @@ def produce_summary(
                      "WHERE symbol=?")
     else:
         query_str = "SELECT chr, start, end FROM genes WHERE symbol=?"
-    global _gene_df
-    global _gene_exp
-    _gene_df = pandas.read_table(expression_table_fp, index_col="Description", 
-                                 engine='c', compression=None, memory_map=True)
-    _gene_exp = {} 
+    gene_exp = {} 
     eqtlfile = open(os.path.join(output_dir, 'eqtls.txt'), 'r', 
                     buffering=buffer_size_in)
     ereader = csv.reader(eqtlfile, delimiter = '\t')
@@ -960,6 +951,7 @@ def produce_summary(
     to_file = [] 
     genes_from_file = []
     snps_from_file = [] 
+    
     for i, row in enumerate(ereader):
         snp = row[0]
         gene = row[1]
@@ -1018,10 +1010,10 @@ def produce_summary(
             distance_from_snp = gene_start - snp_info["locus"]
         elif(snp_info["locus"] > gene_end):
             distance_from_snp = snp_info["locus"] - gene_end
-        if not gene in _gene_exp:
-            _gene_exp[gene] = {} 
-        if not tissue in _gene_exp[gene]:
-            _gene_exp[gene][tissue] = 'NA'
+        if not gene in gene_exp:
+            gene_exp[gene] = {} 
+        if not tissue in gene_exp[gene]:
+            gene_exp[gene][tissue] = 'NA'
         to_file.append([snp,
                    snp_info["chr"],
                    snp_info["locus"],
@@ -1038,37 +1030,42 @@ def produce_summary(
                    interaction,
                    distance_from_snp])
 
-    all_tissues = list(_gene_df) 
     genes_from_file = dict.fromkeys(genes_from_file).keys()
     snps_from_file = dict.fromkeys(snps_from_file).keys()
-    genes_tissues = [(gene, tissue) for gene in genes_from_file 
-                     for tissue in all_tissues]
     snps_genes = [(snp, gene) for snp in snps_from_file 
                   for gene in genes_from_file]
     
+    global GENE_DF
+    GENE_DF = pandas.read_table(expression_table_fp, index_col="Description", 
+                                 engine='c', compression=None, memory_map=True)
+    all_tissues = list(GENE_DF) 
+    genes_tissues = [(gene, tissue) for gene in genes_from_file 
+                                    for tissue in all_tissues]
     current_proc = psutil.Process()
     pl = multiprocessing.Pool(processes=min(num_processes,
                                             len(current_proc.cpu_affinity())))
 
     print("Computing HiC data...")
-    hic_data = pl.map(calc_hic_contacts, snps_genes)
+    hic_data = pl.map(calc_hic_contacts, 
+                      [genes[tpl[0]][tpl[1]] for tpl in snps_genes])
     hic_dict = {} 
     for i in range(len(snps_genes)):
         hic_dict[snps_genes[i]] = hic_data[i]
 
     print("Collecting gene expression rates...")
+    # Efficiently allowing access to a shared namespace by individual processes
     gene_tissue_expression_extremes = pl.map(get_tissue_expression, 
                                              genes_tissues)
     for i in range(len(genes_tissues)):
         expression_rates = [x for x in gene_tissue_expression_extremes[i] 
-                            if x > 0.0]
+                            if x != 'NA' and x > 0.0]
         if expression_rates:
-            _gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = \
-                                                               expression_rates 
-
+            gene_exp[genes_tissues[i][0]][
+                     genes_tissues[i][1]] = expression_rates 
     print("Determining gene expression extremes...")
     for gene in genes_from_file:
-        _gene_exp[gene]['extremes'] = get_gene_expression_extremes(gene)  
+        gene_exp[gene]['extremes'] = get_gene_expression_extremes(gene,
+                                                                gene_exp[gene])  
 
     print("Writing to summary files...")
     for line in to_file:
@@ -1077,8 +1074,8 @@ def produce_summary(
         tissue = line[7]
         line.insert(12, hic_dict[(snp, gene)][0])
         line.insert(12, hic_dict[(snp, gene)][1])
-        line.append(max(_gene_exp[gene][tissue]))
-        line.extend(_gene_exp[gene]['extremes'])
+        line.append(max(gene_exp[gene][tissue]))
+        line.extend(gene_exp[gene]['extremes'])
         summ_writer.writerow(line)
         if line[9] < fdr_threshold:
             try:
