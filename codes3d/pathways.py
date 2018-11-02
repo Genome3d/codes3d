@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-from itertools import combinations
 from wikipathways_api_client import WikipathwaysApiClient
 
 def wikipathways(gene):
