@@ -724,16 +724,15 @@ def calc_hic_contacts(snp_gene_dict):
         score_list: a list of the means of contacts in each cell line
     """
     hic_score = 0
+    cell_lines = sorted(snp_gene_dict.keys())
     scores = []
-    for cell_line in snp_gene_dict:
-        score = snp_gene_dict[cell_line]['interactions'] \
-            / float(snp_gene_dict[cell_line]['replicates'])
+    for cell_line in cell_lines:
+        score = snp_gene_dict[cell_line]['interactions'] / float(snp_gene_dict[
+                                                    cell_line]['replicates'])
+        scores.append('{:.2f}'.format(score))
         hic_score += score
-        scores.append(score)
-    score_list = ', '.join(["{:.2f}".format(scores[i]) for i in range(
-                                                                 len(scores))])
-    hic_score = "{:.4f}".format(hic_score)
-    return (hic_score, score_list)
+    return (', '.join(cell_lines), ', '.join(scores), 
+            "{:.4f}".format(hic_score))
 
 def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
     """Posts and receives requests from GTEx
@@ -853,7 +852,7 @@ def get_tissue_expression(gene_tissue_tpl):
     except KeyError:
         print("\t\tWarning: No expression information for %s in %s." % (gene, 
                                                                        tissue))
-        return 'NA' 
+        return None 
     
 def produce_summary(
         p_values, snps, genes, gene_database_fp,
@@ -1000,7 +999,6 @@ def produce_summary(
             interaction = True
         else:
             interaction = False
-        to_cell_line = ', '.join(cell_lines)
         distance_from_snp = 0
         if(gene_chr == "NA"):
             distance_from_snp = "NA"  # If gene location information is missing
@@ -1025,56 +1023,62 @@ def produce_summary(
                    p_val,
                    qvalue,
                    effect_size,
-                   to_cell_line,
                    p_thresh,
                    interaction,
                    distance_from_snp])
 
+    
     genes_from_file = dict.fromkeys(genes_from_file).keys()
     snps_from_file = dict.fromkeys(snps_from_file).keys()
     snps_genes = [(snp, gene) for snp in snps_from_file 
-                  for gene in genes_from_file]
-    
+                    for gene in genes_from_file]
     global GENE_DF
+    # Efficiently allowing access to a shared namespace by individual processes
     GENE_DF = pandas.read_table(expression_table_fp, index_col="Description", 
                                  engine='c', compression=None, memory_map=True)
     all_tissues = list(GENE_DF) 
     genes_tissues = [(gene, tissue) for gene in genes_from_file 
-                                    for tissue in all_tissues]
+                        for tissue in all_tissues]
+    
     current_proc = psutil.Process()
-    pl = multiprocessing.Pool(processes=min(num_processes,
+    pool = multiprocessing.Pool(processes=min(num_processes,
                                             len(current_proc.cpu_affinity())))
 
-    print("Computing HiC data...")
-    hic_data = pl.map(calc_hic_contacts, 
-                      [genes[tpl[0]][tpl[1]] for tpl in snps_genes])
-    hic_dict = {} 
-    for i in range(len(snps_genes)):
-        hic_dict[snps_genes[i]] = hic_data[i]
-
     print("Collecting gene expression rates...")
-    # Efficiently allowing access to a shared namespace by individual processes
-    gene_tissue_expression_extremes = pl.map(get_tissue_expression, 
+    gene_tissue_expression_extremes = pool.map(get_tissue_expression, 
                                              genes_tissues)
     for i in range(len(genes_tissues)):
         expression_rates = [x for x in gene_tissue_expression_extremes[i] 
-                            if x != 'NA' and x > 0.0]
+                            if x > 0.0]
         if expression_rates:
             gene_exp[genes_tissues[i][0]][
                      genes_tissues[i][1]] = expression_rates 
+    del GENE_DF
+    
     print("Determining gene expression extremes...")
     for gene in genes_from_file:
         gene_exp[gene]['extremes'] = get_gene_expression_extremes(gene,
                                                                 gene_exp[gene])  
+
+    print("Computing HiC data...")
+    hic_data = pool.map(calc_hic_contacts, 
+                      [genes[snp][gene] for snp, gene in snps_genes])
+    hic_dict = {} 
+    for i in range(len(snps_genes)):
+        hic_dict[snps_genes[i]] = hic_data[i]
 
     print("Writing to summary files...")
     for line in to_file:
         snp = line[0]
         gene = line[3]
         tissue = line[7]
-        line.insert(12, hic_dict[(snp, gene)][0])
-        line.insert(12, hic_dict[(snp, gene)][1])
-        line.append(max(gene_exp[gene][tissue]))
+        line.insert(11, hic_dict[(snp, gene)][2])
+        line.insert(11, hic_dict[(snp, gene)][1])
+        line.insert(11, hic_dict[(snp, gene)][0])
+        try:
+            line.append(max(gene_exp[gene][tissue]))
+        except KeyError:
+            line.append('NA')
         line.extend(gene_exp[gene]['extremes'])
         summ_writer.writerow(line)
         if line[9] < fdr_threshold:
