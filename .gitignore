@@ -1,5 +1,5 @@
 .gitignore
-codes3d/codes3d.pyc
+*.pyc
 lib/
 lib
 codes3d_summary/

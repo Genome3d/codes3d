@@ -13,6 +13,7 @@ import operator
 import os
 import sys
 import pandas
+import pathways
 import psutil
 import pybedtools
 import re
@@ -1090,7 +1091,10 @@ def produce_summary(
     summary.close()
     sig_file.close()
 
-    return (num_sig)
+    return (genes_from_file, gene_exp)
+
+def pathway_summary(genes, expression):
+    print("pathway_summary called")
 
     
 def compute_adj_pvalues(p_values):
@@ -2047,9 +2051,10 @@ if __name__ == "__main__":
         args.fdr_threshold, args.local_databases_only,
         args.num_processes, args.output_dir, gene_dict_fp, snp_dict_fp,
         suppress_intermediate_files=args.suppress_intermediate_files)
-    produce_summary(
+    genes, gene_expression = produce_summary(
          p_values, snps, genes, gene_database_fp, expression_table_fp,
          args.fdr_threshold, args.output_dir, args.buffer_size_in,
          args.buffer_size_out, args.num_processes_summary)
+    pathway_summary(genes, gene_expression)
     #produce_overview(genes,eqtls,num_sig,args.output_dir)
     #pathways = retrieve_pathways(eqtls,args.fdr_threshold,args.num_processes,args.output_dir)

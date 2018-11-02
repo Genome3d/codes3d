@@ -62,7 +62,8 @@ if __name__ == "__main__":
     p_values, snps, genes = codes3d.parse_eqtls_files(
         args.eqtls_files, snp_database_fp, gene_database_fp,
         restriction_enzymes, lib_fp, args.output_dir, args.fdr_threshold)
-    codes3d.produce_summary(
+    genes, gene_expression = codes3d.produce_summary(
         p_values, snps, genes, gene_database_fp, expression_table_fp,
         args.fdr_threshold, args.output_dir, args.buffer_size_in,
         args.buffer_size_out, args.num_processes_summary)
+    codes3d.pathway_summary(genes, gene_expression)
