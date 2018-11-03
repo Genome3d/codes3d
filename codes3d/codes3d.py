@@ -1033,17 +1033,19 @@ def produce_summary(
     snps_from_file = dict.fromkeys(snps_from_file).keys()
     snps_genes = [(snp, gene) for snp in snps_from_file 
                     for gene in genes_from_file]
+    
     global GENE_DF
     # Efficiently allowing access to a shared namespace by individual processes
     GENE_DF = pandas.read_table(expression_table_fp, index_col="Description", 
                                  engine='c', compression=None, memory_map=True)
+    
     all_tissues = list(GENE_DF) 
     genes_tissues = [(gene, tissue) for gene in genes_from_file 
                         for tissue in all_tissues]
     
-    current_proc = psutil.Process()
+    current_process = psutil.Process()
     pool = multiprocessing.Pool(processes=min(num_processes,
-                                            len(current_proc.cpu_affinity())))
+                                          len(current_process.cpu_affinity())))
 
     print("Collecting gene expression rates...")
     gene_tissue_expression_extremes = pool.map(get_tissue_expression, 
@@ -1094,7 +1096,7 @@ def produce_summary(
     return (genes_from_file, gene_exp)
 
 def pathway_summary(genes, expression):
-    print("pathway_summary called")
+    print("pathway_summary() called")
 
     
 def compute_adj_pvalues(p_values):
