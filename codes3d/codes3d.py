@@ -1093,7 +1093,7 @@ def produce_summary(
     summary.close()
     sig_file.close()
 
-    return (genes_from_file, gene_exp)
+    return (num_sig)
 
 def compute_adj_pvalues(p_values):
     """ A Benjamini-Hochberg adjustment of p values of SNP-gene eQTL
