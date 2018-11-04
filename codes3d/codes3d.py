@@ -716,13 +716,14 @@ def calc_hic_contacts(snp_gene_dict):
     """Calculates score of HiC contacts between SNP and gene.
 
     Args:
-        genes: Dictionary from find_genes
-        snp:
-        gene:
+        snp_gene_dict: The snp and gene specific portion of the dictionary
+        from find_genes
 
     Returns:
+        cell_lines: string representing a list of cell line identifiers
+        scores: string representing a list of the means of contacts in each 
+        cell line
         hic_score: sum of the averages of contacts per cell line.
-        score_list: a list of the means of contacts in each cell line
     """
     hic_score = 0
     cell_lines = sorted(snp_gene_dict.keys())
@@ -817,7 +818,6 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
     s.close()
 
 def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
-
     print("Getting gene expression information...")
     gene_df = pandas.read_table(expression_table_fp, index_col='Symbol')
     gene_exp = pandas.DataFrame(data=None, columns=gene_df.columns)
@@ -1095,10 +1095,6 @@ def produce_summary(
 
     return (genes_from_file, gene_exp)
 
-def pathway_summary(genes, expression):
-    print("pathway_summary() called")
-
-    
 def compute_adj_pvalues(p_values):
     """ A Benjamini-Hochberg adjustment of p values of SNP-gene eQTL
            interactions from GTEx.
@@ -2053,10 +2049,9 @@ if __name__ == "__main__":
         args.fdr_threshold, args.local_databases_only,
         args.num_processes, args.output_dir, gene_dict_fp, snp_dict_fp,
         suppress_intermediate_files=args.suppress_intermediate_files)
-    genes, gene_expression = produce_summary(
+    produce_summary(
          p_values, snps, genes, gene_database_fp, expression_table_fp,
          args.fdr_threshold, args.output_dir, args.buffer_size_in,
          args.buffer_size_out, args.num_processes_summary)
-    pathway_summary(genes, gene_expression)
     #produce_overview(genes,eqtls,num_sig,args.output_dir)
     #pathways = retrieve_pathways(eqtls,args.fdr_threshold,args.num_processes,args.output_dir)
