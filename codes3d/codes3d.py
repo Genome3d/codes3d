@@ -726,6 +726,7 @@ def calc_hic_contacts(snp_gene_dict):
         hic_score: sum of the averages of contacts per cell line.
     """
     hic_score = 0
+    cell_lines = []
     scores = []
     for cell_line in cell_lines:
         score = snp_gene_dict[cell_line]['interactions'] / float(snp_gene_dict[
