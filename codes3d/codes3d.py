@@ -726,11 +726,11 @@ def calc_hic_contacts(snp_gene_dict):
         hic_score: sum of the averages of contacts per cell line.
     """
     hic_score = 0
-    cell_lines = sorted(snp_gene_dict.keys())
     scores = []
     for cell_line in cell_lines:
         score = snp_gene_dict[cell_line]['interactions'] / float(snp_gene_dict[
                                                     cell_line]['replicates'])
+        cell_lines.append(cell_line) 
         scores.append('{:.2f}'.format(score))
         hic_score += score
     return (', '.join(cell_lines), ', '.join(scores), 
