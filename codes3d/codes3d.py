@@ -13,7 +13,6 @@ import operator
 import os
 import sys
 import pandas
-import pathways
 import psutil
 import pybedtools
 import re
