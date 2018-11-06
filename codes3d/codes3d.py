@@ -553,7 +553,7 @@ def find_eqtls(
                                         p_values,
                                         num_processes,
                                         output_dir)
-    
+
     return num_tests, p_values
 
 def query_local_databases(
@@ -704,7 +704,7 @@ def query_GTEx_service(
             print("\t\tWARNING: bad response (%s)" % response[1])
             failed_requests.append(response[0])
     eqtlfile.close()
-    print('\n')    
+    print('\n')
     if failed_requests:
         # TODO: Handle the failed requests procedure
         with open(output_dir + "/failed_GTEx_requests.txt", 'w') \
@@ -721,20 +721,20 @@ def calc_hic_contacts(snp_gene_dict):
 
     Returns:
         cell_lines: string representing a list of cell line identifiers
-        scores: string representing a list of the means of contacts in each 
+        scores: string representing a list of the means of contacts in each
         cell line
         hic_score: sum of the averages of contacts per cell line.
     """
     hic_score = 0
     cell_lines = []
     scores = []
-    for cell_line in cell_lines:
-        score = snp_gene_dict[cell_line]['interactions'] / float(snp_gene_dict[
-                                                    cell_line]['replicates'])
-        cell_lines.append(cell_line) 
+    for cell_line in snp_gene_dict:
+        score = snp_gene_dict[cell_line]['interactions'] / float(
+                        snp_gene_dict[cell_line]['replicates'])
+        cell_lines.append(cell_line)
         scores.append('{:.2f}'.format(score))
         hic_score += score
-    return (', '.join(cell_lines), ', '.join(scores), 
+    return (', '.join(cell_lines), ', '.join(scores),
             "{:.4f}".format(hic_score))
 
 def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
@@ -828,7 +828,7 @@ def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
                 try:
                     gene_exp = gene_exp.append(gene_df.ix[gene])
                 except KeyError:
-                    print("Warning: No gene expression information for %s" 
+                    print("Warning: No gene expression information for %s"
                           % gene)
     gene_exp.to_csv(
         path_or_buf=output_dir +
@@ -837,29 +837,29 @@ def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
 
 def get_gene_expression_extremes(gene, gene_exp):
     try:
-        max_expression = max(gene_exp.iteritems(), 
+        max_expression = max(gene_exp.iteritems(),
                              key=lambda exp: max(exp[1]))
     except KeyError:
         return tuple(['NA', 'NA', 'NA', 'NA'])
-    min_expression = min(gene_exp.iteritems(), 
+    min_expression = min(gene_exp.iteritems(),
                          key=lambda exp: min(exp[1]))
-    return tuple([max_expression[0], max(max_expression[1]), min_expression[0], 
+    return tuple([max_expression[0], max(max_expression[1]), min_expression[0],
                  min(min_expression[1])])
 
 def get_tissue_expression(gene_tissue_tpl):
     try:
         return list(GENE_DF.at[gene_tissue_tpl[0], gene_tissue_tpl[1]])
-    except TypeError: 
+    except TypeError:
         return  list([GENE_DF.at[gene_tissue_tpl[0], gene_tissue_tpl[1]]])
     except KeyError:
-        print("\t\tWarning: No expression information for %s in %s." % (gene, 
+        print("\t\tWarning: No expression information for %s in %s." % (gene,
                                                                        tissue))
-        return None 
-    
+        return None
+
 def produce_summary(
         p_values, snps, genes, gene_database_fp,
         expression_table_fp, fdr_threshold, output_dir, buffer_size_in,
-        buffer_size_out, num_processes):    
+        buffer_size_out, num_processes):
     """Write final results of eQTL-eGene associations
 
     Args:
@@ -895,7 +895,7 @@ def produce_summary(
         sig_eqtls.text: A file with eQTL associations with
             adj_p_values <= FDR threshold. Same structure as summary.txt
     """
-    num_sig = {} 
+    num_sig = {}
     # Number of eQTLs deemed significant under the given threshold
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
@@ -924,35 +924,35 @@ def produce_summary(
                    'Min_Expressed_Tissue',
                    'Min_Expression_Level']
     summ_writer.writerow(summ_header)
-    sig_file = open(os.path.join(output_dir, 'significant_eqtls.txt'), 'w', 
+    sig_file = open(os.path.join(output_dir, 'significant_eqtls.txt'), 'w',
                     buffering=buffer_size_out)
     sigwriter = csv.writer(sig_file, delimiter='\t')
-    sigwriter.writerow(summ_header) 
+    sigwriter.writerow(summ_header)
     gene_index_db = sqlite3.connect(gene_database_fp)
     gene_index_db.text_factory = str
     col_names = [res[1]
                  for res in gene_index_db.execute("PRAGMA table_info(genes)")]
     include_p_thresh = "p_thresh" in col_names
     if include_p_thresh:
-        query_str = ("SELECT chr, start, end, p_thresh FROM genes " 
+        query_str = ("SELECT chr, start, end, p_thresh FROM genes "
                      "WHERE symbol=?")
     else:
         query_str = "SELECT chr, start, end FROM genes WHERE symbol=?"
-    gene_exp = {} 
-    eqtlfile = open(os.path.join(output_dir, 'eqtls.txt'), 'r', 
+    gene_exp = {}
+    eqtlfile = open(os.path.join(output_dir, 'eqtls.txt'), 'r',
                     buffering=buffer_size_in)
     ereader = csv.reader(eqtlfile, delimiter = '\t')
-    
-    p_values_map = {} 
+
+    p_values_map = {}
     print('Adjusting p-values...')
     adjusted_p_values = compute_adj_pvalues(p_values)
     for i in range(len(p_values)):
         p_values_map[p_values[i]] = adjusted_p_values[i]
 
-    to_file = [] 
+    to_file = []
     genes_from_file = []
-    snps_from_file = [] 
-    
+    snps_from_file = []
+
     for i, row in enumerate(ereader):
         snp = row[0]
         gene = row[1]
@@ -970,7 +970,7 @@ def produce_summary(
         gene_start = "NA"
         gene_end = "NA"
         max_length = 0
- 
+
         gene_stat = gene_index_db.execute(query_str, (gene,)).fetchone()
         # Consider "canonical" to be the longest record where
         # multiple records are present
@@ -1011,7 +1011,7 @@ def produce_summary(
         elif(snp_info["locus"] > gene_end):
             distance_from_snp = snp_info["locus"] - gene_end
         if not gene in gene_exp:
-            gene_exp[gene] = {} 
+            gene_exp[gene] = {}
         if not tissue in gene_exp[gene]:
             gene_exp[gene][tissue] = 'NA'
         to_file.append([snp,
@@ -1029,45 +1029,45 @@ def produce_summary(
                    interaction,
                    distance_from_snp])
 
-    
+
     genes_from_file = dict.fromkeys(genes_from_file).keys()
     snps_from_file = dict.fromkeys(snps_from_file).keys()
-    snps_genes = [(snp, gene) for snp in snps_from_file 
+    snps_genes = [(snp, gene) for snp in snps_from_file
                     for gene in genes_from_file]
-    
+
     global GENE_DF
     # Efficiently allowing access to a shared namespace by individual processes
-    GENE_DF = pandas.read_table(expression_table_fp, index_col="Description", 
+    GENE_DF = pandas.read_table(expression_table_fp, index_col="Description",
                                  engine='c', compression=None, memory_map=True)
-    
-    all_tissues = list(GENE_DF) 
-    genes_tissues = [(gene, tissue) for gene in genes_from_file 
+
+    all_tissues = list(GENE_DF)
+    genes_tissues = [(gene, tissue) for gene in genes_from_file
                         for tissue in all_tissues]
-    
+
     current_process = psutil.Process()
     pool = multiprocessing.Pool(processes=min(num_processes,
                                           len(current_process.cpu_affinity())))
 
     print("Collecting gene expression rates...")
-    gene_tissue_expression_extremes = pool.map(get_tissue_expression, 
+    gene_tissue_expression_extremes = pool.map(get_tissue_expression,
                                              genes_tissues)
     for i in range(len(genes_tissues)):
-        expression_rates = [x for x in gene_tissue_expression_extremes[i] 
+        expression_rates = [x for x in gene_tissue_expression_extremes[i]
                             if x > 0.0]
         if expression_rates:
             gene_exp[genes_tissues[i][0]][
-                     genes_tissues[i][1]] = expression_rates 
+                     genes_tissues[i][1]] = expression_rates
     del GENE_DF
-    
+
     print("Determining gene expression extremes...")
     for gene in genes_from_file:
         gene_exp[gene]['extremes'] = get_gene_expression_extremes(gene,
-                                                                gene_exp[gene])  
+                                                                gene_exp[gene])
 
     print("Computing HiC data...")
-    hic_data = pool.map(calc_hic_contacts, 
+    hic_data = pool.map(calc_hic_contacts,
                       [genes[snp][gene] for snp, gene in snps_genes])
-    hic_dict = {} 
+    hic_dict = {}
     for i in range(len(snps_genes)):
         hic_dict[snps_genes[i]] = hic_data[i]
 
@@ -1321,7 +1321,7 @@ def parse_genes_files(genes_files):
                 genes[snp][gene][cell_line] = {
                     'interactions': interactions,
                     'replicates': replicates_count,
-                    'rep_present': interactions_replicates} 
+                    'rep_present': interactions_replicates}
             except KeyError:
                 if not snp in genes:
                     genes[snp] = {}
@@ -1356,7 +1356,7 @@ def parse_eqtls_files(
     file_count = 1
     genes_files = []
     for eqtls_file in eqtls_files:
-        file_path = eqtls_file[:len(eqtls_file)-9]        
+        file_path = eqtls_file[:len(eqtls_file)-9]
         print('\tParsing eQTL file {} of {}'.format(file_count, len(eqtls_files)))
         file_count += 1
         if os.path.isfile(os.path.join(file_path, 'genes.txt')):
@@ -1368,7 +1368,7 @@ def parse_eqtls_files(
                   ' directory as \'eqtls.txt\'. \n\t\tSome info will be missing.')
             #print('Oops!: Please ensure \'genes.txt\' file is in the same' +\
             #      ' directory as \'eqtls.txt\'\n Program terminating.')
-        
+
 
         eqtlfile =  open(eqtls_file, 'r')
         ereader = csv.reader(eqtlfile, delimiter='\t')
@@ -1428,7 +1428,7 @@ def parse_eqtls_files(
     for eqtls_file in eqtls_files:
         with open(eqtls_file, 'r') as efile:
             shutil.copyfileobj(efile, joined_eqtl_file)
-    
+
     return (p_values, snps, genes)
 
 
@@ -1996,7 +1996,7 @@ if __name__ == "__main__":
     parser.add_argument("-d","--buffer_size_out",type=int,default=1048576,
                         help="Buffer size applied to file output during " +\
                         "compilation (default: 1048576).")
-    parser.add_argument("-t", "--num_processes_summary", type=int, 
+    parser.add_argument("-t", "--num_processes_summary", type=int,
                         default=min(psutil.cpu_count(), 32),
                         help="The number of processes for compilation of " +\
                         "the results (default: %s)." %
