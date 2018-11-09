@@ -833,16 +833,15 @@ def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
         "/gene_expression_table.txt",
         sep='\t')
 
-def get_gene_expression_extremes(gene, gene_exp):
+def get_gene_expression_extremes(gene_exp):
     try:
         max_expression = max(gene_exp.iteritems(),
                              key=lambda exp: max(exp[1]))
-    except KeyError:
+    except ValueError:
         return tuple(['NA', 'NA', 'NA', 'NA'])
-    min_expression = min(gene_exp.iteritems(),
-                         key=lambda exp: min(exp[1]))
+    min_expression = min(gene_exp.iteritems(), key=lambda exp: min(exp[1]))
     return tuple([max_expression[0], max(max_expression[1]), min_expression[0],
-                 min(min_expression[1])])
+                  min(min_expression[1])])
 
 def get_tissue_expression(gene_tissue_tpl):
     try:
@@ -850,9 +849,9 @@ def get_tissue_expression(gene_tissue_tpl):
     except TypeError:
         return  list([GENE_DF.at[gene_tissue_tpl[0], gene_tissue_tpl[1]]])
     except KeyError:
-        print("\t\tWarning: No expression information for %s in %s." % (gene,
-                                                                       tissue))
-        return None
+        print("\t\tWarning: No expression information for %s in %s."
+              % (gene, tissue))
+        return []
 
 def produce_summary(
         p_values, snps, genes, gene_database_fp,
@@ -936,7 +935,6 @@ def produce_summary(
                      "WHERE symbol=?")
     else:
         query_str = "SELECT chr, start, end FROM genes WHERE symbol=?"
-    gene_exp = {}
     eqtlfile = open(os.path.join(output_dir, 'eqtls.txt'), 'r',
                     buffering=buffer_size_in)
     ereader = csv.reader(eqtlfile, delimiter = '\t')
@@ -948,17 +946,13 @@ def produce_summary(
         p_values_map[p_values[i]] = adjusted_p_values[i]
 
     to_file = []
-    genes_from_file = []
-    snps_from_file = []
-
+    gene_exp = {}
     for i, row in enumerate(ereader):
         snp = row[0]
         gene = row[1]
         tissue = row[2]
         p_val = row[3]
         effect_size = row[4]
-        genes_from_file.append(gene)
-        snps_from_file.append(snp)
         qvalue = p_values_map[float(p_val)]
         snp_info = {
             "chr": snps[snp]["chr"],
@@ -1008,10 +1002,6 @@ def produce_summary(
             distance_from_snp = gene_start - snp_info["locus"]
         elif(snp_info["locus"] > gene_end):
             distance_from_snp = snp_info["locus"] - gene_end
-        if not gene in gene_exp:
-            gene_exp[gene] = {}
-        if not tissue in gene_exp[gene]:
-            gene_exp[gene][tissue] = 'NA'
         to_file.append([snp,
                    snp_info["chr"],
                    snp_info["locus"],
@@ -1026,45 +1016,47 @@ def produce_summary(
                    p_thresh,
                    interaction,
                    distance_from_snp])
+        if gene not in gene_exp:
+            gene_exp[gene] = {}
 
-
-    genes_from_file = dict.fromkeys(genes_from_file).keys()
-    snps_from_file = dict.fromkeys(snps_from_file).keys()
-    snps_genes = [(snp, gene) for snp in snps_from_file
-                    for gene in genes_from_file]
+    snps = genes.keys()
+    genes_list = dict.fromkeys(gene_exp).keys()
+    snps_genes = [(snp, gene) for snp in snps for gene in genes_list]
 
     global GENE_DF
     # Efficiently allowing access to a shared namespace by individual processes
     GENE_DF = pandas.read_table(expression_table_fp, index_col="Description",
-                                 engine='c', compression=None, memory_map=True)
+                                engine='c', compression=None, memory_map=True)
 
     all_tissues = list(GENE_DF)
-    genes_tissues = [(gene, tissue) for gene in genes_from_file
-                        for tissue in all_tissues]
+    genes_tissues = [(gene, tissue) for gene in genes_list
+                                    for tissue in all_tissues]
 
     current_process = psutil.Process()
     pool = multiprocessing.Pool(processes=min(num_processes,
-                                          len(current_process.cpu_affinity())))
+                                              len(current_process.cpu_affinity(
+                                                  ))))
 
     print("Collecting gene expression rates...")
-    gene_tissue_expression_extremes = pool.map(get_tissue_expression,
-                                             genes_tissues)
+    gene_tissue_expression_rates = pool.map(get_tissue_expression,
+                                            genes_tissues)
     for i in range(len(genes_tissues)):
-        expression_rates = [x for x in gene_tissue_expression_extremes[i]
-                            if x > 0.0]
+        expression_rates = [exp for exp in gene_tissue_expression_rates[i]
+                                if exp > 0.0]
         if expression_rates:
             gene_exp[genes_tissues[i][0]][
                      genes_tissues[i][1]] = expression_rates
+
     del GENE_DF
 
     print("Determining gene expression extremes...")
-    for gene in genes_from_file:
-        gene_exp[gene]['extremes'] = get_gene_expression_extremes(gene,
-                                                                gene_exp[gene])
+    for gene in genes_list:
+        gene_exp[gene]['extremes'
+                            ] = get_gene_expression_extremes(gene_exp[gene])
 
     print("Computing HiC data...")
     hic_data = pool.map(calc_hic_contacts,
-                      [genes[snp][gene] for snp, gene in snps_genes])
+                        [genes[snp][gene] for snp, gene in snps_genes])
     hic_dict = {}
     for i in range(len(snps_genes)):
         hic_dict[snps_genes[i]] = hic_data[i]
@@ -1074,9 +1066,14 @@ def produce_summary(
         snp = line[0]
         gene = line[3]
         tissue = line[7]
-        line.insert(11, hic_dict[(snp, gene)][2])
-        line.insert(11, hic_dict[(snp, gene)][1])
-        line.insert(11, hic_dict[(snp, gene)][0])
+        try:
+            line.insert(11, hic_dict[(snp, gene)][2])
+            line.insert(11, hic_dict[(snp, gene)][1])
+            line.insert(11, hic_dict[(snp, gene)][0])
+        except KeyError:
+            line.insert(11, 'NA')
+            line.insert(11, 'NA')
+            line.insert(11, 'NA')
         try:
             line.append(max(gene_exp[gene][tissue]))
         except KeyError:
