@@ -1028,8 +1028,8 @@ def produce_summary(
                    distance_from_snp])
 
 
-    genes_from_file = list(set(genes_from_file))
-    snps_from_file = list(set(snps_from_file))
+    genes_from_file = dict.fromkeys(genes_from_file).keys()
+    snps_from_file = dict.fromkeys(snps_from_file).keys()
     snps_genes = [(snp, gene) for snp in snps_from_file
                     for gene in genes_from_file]
 
