@@ -810,13 +810,13 @@ def get_gene_expression_information(eqtls, expression_table_fp, output_dir):
         sep='\t')
 
 def get_expression(gene_tissue_tuple):
-    gene = gene_tissue_tuple[0]
-    tissue = gene_tissue_tuple[1]
     try:
-        expression = list(GENE_DF.at[gene, tissue])
+        expression = list(GENE_DF.at[gene_tissue_tuple[0],
+                                     gene_tissue_tuple[1]])
         return (expression, max(expression))
     except TypeError:
-        expression = list([GENE_DF.at[gene, tissue]])
+        expression = list([GENE_DF.at[gene_tissue_tuple[0],
+                                      gene_tissue_tuple[1]]])
         return (expression, expression[0])
     except KeyError:
         print("\t\tWarning: No expression information for %s in %s."
