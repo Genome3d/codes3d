@@ -24,6 +24,8 @@ You will then need to install the CoDeS3D dependencies by running `setup.sh` (yo
   - matplotlib
   - progressbar
   - progressbar2
+  - psutil (run 'pip2 install psutil' for python2)
+  - rpy2 (run 'pip2 install rpy2==2.8..6' for python2)
 - The [WikiPathways Python API client](https://github.com/wikipathways/wikipathways-api-client-py)*
 
 \* After installing the WikiPathways Python API client, you may get an ImportError when you attempt to run CoDeS3D. To prevent this, 

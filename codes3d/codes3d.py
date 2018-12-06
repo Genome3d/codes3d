@@ -742,6 +742,7 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
         while True:
             print("\t\tSending request %s of %s" % (num, num_reqLists))
             gtex_url = "https://gtexportal.org/api/b0.9/association/dyneqtl"
+	    #gtex_url = "https://gtexportal.org/rest/v1/association/dyneqtl"
             res = s.post(gtex_url, json=reqList)
             #print("Printing status code...", res.status_code )
             if res.status_code == 200:
@@ -832,8 +833,8 @@ def get_expression_extremes(gene_exp):
     if not gene_exp:
         return ('NA', 'NA', 'NA', 'NA')
 
-    max_expression = max(gene_exp.iteritems(), key=lambda exp: max(exp[1]))
-    min_expression = min(gene_exp.iteritems(), key=lambda exp: min(exp[1]))
+    max_expression = max(gene_exp.items(), key=lambda exp: max(exp[1]))
+    min_expression = min(gene_exp.items(), key=lambda exp: min(exp[1]))
     return (max_expression[0], max(max_expression[1]), min_expression[0],
             min(min_expression[1]))
 
