@@ -5,6 +5,7 @@ import codes3d
 import configparser
 import os
 import sys
+import psutil
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
@@ -17,13 +18,28 @@ if __name__ == "__main__":
             help="The directory in which to output results "+\
             "(\"codes3d_output\" by default).")
     parser.add_argument(
-            "-c","--config",default="docs/codes3d.conf",
+            "-c","--config",
+        default=os.path.join(os.path.dirname(__file__),
+                             "../docs/codes3d.conf"),
             help="The configuration file to be used in this "+\
             "instance (default: conf.py)")
     parser.add_argument(
             "-f","--fdr_threshold",type=float,default=0.05,
             help="The FDR threshold to consider an eQTL statistically "+\
             "significant (default: 0.05).")
+    parser.add_argument(
+            "-b","--buffer_size_in",type=int,default=1048576,
+            help="Buffer size applied to file input during compilation "+\
+            " (default: 1048576).")
+    parser.add_argument(
+            "-d","--buffer_size_out",type=int,default=1048576,
+            help="Buffer size applied to file output during compilation "+\
+            " (default: 1048576).")
+    parser.add_argument(
+            "-t", "--num_processes_summary", type=int,
+            default=min(psutil.cpu_count(), 32),
+            help="The number of processes for compilation of the results " +\
+            "(default: %s)." % str(min(psutil.cpu_count(), 32)))
     args = parser.parse_args()
     config = configparser.ConfigParser()
     config.read(args.config)
@@ -43,9 +59,10 @@ if __name__ == "__main__":
     if not os.path.isdir(args.output_dir):
 	    print('\tCreating output directory..')
 	    os.mkdir(args.output_dir)
-    eqtls_files, p_values, snps, genes = codes3d.parse_eqtls_files(
+    p_values, snps, genes = codes3d.parse_eqtls_files(
         args.eqtls_files, snp_database_fp, gene_database_fp,
         restriction_enzymes, lib_fp, args.output_dir, args.fdr_threshold)
     codes3d.produce_summary(
-        p_values, eqtls_files, snps, genes, gene_database_fp, expression_table_fp,
-        args.fdr_threshold, args.output_dir)
+        p_values, snps, genes, gene_database_fp, expression_table_fp,
+        args.fdr_threshold, args.output_dir, args.buffer_size_in,
+        args.buffer_size_out, args.num_processes_summary)
