@@ -741,8 +741,7 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
     try:
         while True:
             print("\t\tSending request %s of %s" % (num, num_reqLists))
-            gtex_url = "https://gtexportal.org/api/b0.9/association/dyneqtl"
-	    #gtex_url = "https://gtexportal.org/rest/v1/association/dyneqtl"
+	    gtex_url = "https://gtexportal.org/rest/v1/association/dyneqtl"
             res = s.post(gtex_url, json=reqList)
             #print("Printing status code...", res.status_code )
             if res.status_code == 200:
