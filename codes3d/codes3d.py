@@ -755,18 +755,18 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
                 time.sleep(60)
                 return
             else:
-                print("\t\tRequest %s received response with status %s. "+ \
-                      "Trying again in five minutes." % (num, res.status_code))
-                time.sleep(300)
+                print("\t\tRequest %s received response with status %s. " \
+                      "Trying again in one minute." % (num, res.status_code))
+                time.sleep(60)
     except requests.exceptions.ConnectionError:
         try:
             print("\t\tWarning: Request %s experienced a connection error. \
-                  Retrying in five minutes." % num)
-            time.sleep(300)
+                  Retrying in two minutes." % num)
+            time.sleep(120)
             while True:
                 print("\t\tSending request %s of %s" % (num, num_reqLists))
                 res = s.post(
-                    "http://gtexportal.org/api/v6p/dyneqtl?v=clversion",
+                    "https://gtexportal.org/rest/v1/association/dyneqtl",
                     json=reqList)
                 if res.status_code == 200:
                     gtexResponses.append((reqList, res))
@@ -785,8 +785,8 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
                     gtexResponses.append((reqList, res.status_code))
                     time.sleep(60)
                     return
-        except requests.exceptions.ConnectionError:
-            print("\t\tRetry failed. Continuing, but results will be incomplete.")
+	except requests.exceptions.ConnectionError:
+	    print("\t\tRetry failed. Continuing, but results will be incomplete.")
             gtexResponses.append((reqList, "Connection failure"))
             time.sleep(60)
             return
