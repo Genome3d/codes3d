@@ -754,23 +754,23 @@ def send_GTEx_query(num, num_reqLists, reqList, gtexResponses):
             res = s.post(gtex_url, json=reqList)
             if res.status_code == 200:
                 gtexResponses.append((reqList, res))
-                time.sleep(60)
+                time.sleep(1)
                 return
             elif res.status_code == 500 or res.status_code == 400:
                 print("\t\tThere was an error processing request %s. \
                       Writing to failed request log and continuing." % num)
                 gtexResponses.append((reqList, "Processing error"))
-                time.sleep(60)
+                time.sleep(2)
                 return
             else:
                 print("\t\tRequest %s received response with status %s. " \
-                      "Trying again in one minute." % (num, res.status_code))
-                time.sleep(60)
+                      "Trying again in ten seconds." % (num, res.status_code))
+                time.sleep(10)
     except requests.exceptions.ConnectionError:
         try:
             print("\t\tWarning: Request %s experienced a connection error. \
-                  Retrying in two minutes." % num)
-            time.sleep(120)
+                  Retrying in one minute." % num)
+            time.sleep(60)
             while True:
                 print("\t\tSending request %s of %s" % (num, num_reqLists))
                 res = s.post(
