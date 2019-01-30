@@ -512,7 +512,7 @@ def find_eqtls(
         eqtl_data_dir,
         gene_database_fp,
         fdr_threshold,
-        local_databases_only,
+        query_databases,
         num_processes,
         output_dir,
         gene_dict_fp,
@@ -526,8 +526,8 @@ def find_eqtls(
         eqtl_data_dir: ../../eQTLs  #For local eQTL query
         gene_database_fp: ../../gene_reference.db
         fdr_threshold: Significance threshold for the FDR. Default = 0.05
-        local_databases_only: boolean specifying if only local eQTL database
-            should be querried.
+        query_databases: a string specifying whether to query only local eQTL databases
+           or only online databases or both.
         num_processes: Number of processors to be used when multiprocessing.
         output_dir: User-specified directory for results. Defaults to inputs directory.
         suppress_intermediate_files: if 'False', eqtls.txt file is written to output_dir
@@ -548,19 +548,28 @@ def find_eqtls(
     eqtls = {}  # A mapping of SNP-gene eQTL relationships
     p_values = []  # A list of all p-values for computing FDR
     num_tests = 0  # Total number of tests done
+    to_online_query = [] # List of SNP-gene-tissue to query
     try:
         os.remove(os.path.join(output_dir, 'eqtls.txt'))
     except OSError:
         pass
-    num_tests, to_online_query = query_local_databases(
-        eqtl_data_dir,
-        genes,
-        gene_dict_fp,
-        snp_dict_fp,
-        p_values,
-        output_dir)
-    print(num_tests, len(p_values), len(to_online_query))
-    if not local_databases_only:
+    if query_databases == 'both' or query_databases == 'local':
+        num_tests, to_online_query = query_local_databases(
+            eqtl_data_dir,
+            genes,
+            gene_dict_fp,
+            snp_dict_fp,
+            p_values,
+            output_dir)
+        if query_databases == 'local':
+            print('Local tests done: {}'.format(
+                num_tests))
+        else:
+            print('Local tests done: {}\t  Online tests to do: {}'.format(
+                num_tests, len(to_online_query)))
+    if query_databases == 'online':
+        num_tests, to_online_query = prep_GTEx_queries(genes)
+    if query_databases != 'local':
         num_tests += query_GTEx_service(snps,
                                         genes,
                                         to_online_query,
@@ -636,6 +645,65 @@ def query_local_databases(
     snp_dict_db.close()
     return num_tests, to_online_query
 
+def prep_GTEx_queries(genes):
+    # TODO: Keep an eye to update tissues with every GTEx release
+    tissues = ["Adipose_Subcutaneous",
+               "Adipose_Visceral_Omentum",
+               "Adrenal_Gland",
+               "Artery_Aorta",
+               "Artery_Coronary",
+               "Artery_Tibial",
+               "Brain_Amygdala",
+               "Brain_Anterior_cingulate_cortex_BA24",
+               "Brain_Caudate_basal_ganglia",
+               "Brain_Cerebellar_Hemisphere",
+               "Brain_Cerebellum",
+               "Brain_Cortex",
+               "Brain_Frontal_Cortex_BA9",
+               "Brain_Hippocampus",
+               "Brain_Hypothalamus",
+               "Brain_Nucleus_accumbens_basal_ganglia",
+               "Brain_Putamen_basal_ganglia",
+               "Brain_Spinal_cord_cervical_c-1",
+               "Brain_Substantia_nigra",
+               "Breast_Mammary_Tissue",
+               "Cells_EBV-transformed_lymphocytes",
+               "Cells_Transformed_fibroblasts",
+               "Colon_Sigmoid",
+               "Colon_Transverse",
+               "Esophagus_Gastroesophageal_Junction",
+               "Esophagus_Mucosa",
+               "Esophagus_Muscularis",
+               "Heart_Atrial_Appendage",
+               "Heart_Left_Ventricle",
+               "Liver",
+               "Lung",
+               "Minor_Salivary_Gland",
+               "Muscle_Skeletal",
+               "Nerve_Tibial",
+               "Ovary",
+               "Pancreas",
+               "Pituitary",
+               "Prostate",
+               "Skin_Not_Sun_Exposed_Suprapubic",
+               "Skin_Sun_Exposed_Lower_leg",
+               "Small_Intestine_Terminal_Ileum",
+               "Spleen",
+               "Stomach",
+               "Testis",
+               "Thyroid",
+               "Uterus",
+               "Vagina",
+               "Whole_Blood"]
+    to_online_query = []
+    num = 0
+    for snp in genes.keys():
+        for gene in genes[snp]:
+            for tissue in tissues:
+                to_online_query.append((snp, gene, tissue))
+    return(num, to_online_query)
+
+
 def query_GTEx_service(
         snps,
         genes,
@@ -675,7 +743,7 @@ def query_GTEx_service(
     num_tests = 0
     reqLists = [[]]
     for assoc in to_query:
-        if len(reqLists[-1]) < 950: # >1000 requests is buggy
+        if len(reqLists[-1]) < 960: # >1000 requests is buggy
             reqLists[-1].append({"variantId": assoc[0],
                                  "gencodeId": assoc[1],
                                  "tissueSiteDetailId": assoc[2]})
@@ -2065,10 +2133,13 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output_dir", default="codes3d_output",
                         help="The directory in which to output results " +\
                         "(\"hiCquery_output\" by default).")
-    parser.add_argument("-l", "--local_databases_only", action="store_true",
-                        default=False, help="Consider only local databases. " +\
-                        "Will only include cis-eQTLs if using downloadable " +\
-                        "GTEx dataset.")
+    parser.add_argument("-q", "--query_databases", type = str,
+                        default="both",
+                        help="[local] for only local databases. " +\
+                        "This will only include cis-eQTLs if using downloadable " +\
+                        "GTEx dataset. "+\
+                        "[online] for only online GTEx queries. " +\
+                        "[both] Default. Will query both local and online databases.")
     parser.add_argument("-s", "--suppress_intermediate_files", action="store_true",
                         default=False, help="Do not produce intermediate " +\
                         "files. These can be used to run the pipeline from " +\
@@ -2139,7 +2210,7 @@ if __name__ == "__main__":
                        args.output_dir, args.suppress_intermediate_files)
     num_sig, p_values = find_eqtls(
         snps, genes, eqtl_data_dir, gene_database_fp,
-        args.fdr_threshold, args.local_databases_only,
+        args.fdr_threshold, args.query_databases,
         args.num_processes, args.output_dir, gene_dict_fp, snp_dict_fp,
         suppress_intermediate_files=args.suppress_intermediate_files)
     produce_summary(
