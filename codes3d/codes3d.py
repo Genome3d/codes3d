@@ -468,7 +468,6 @@ def find_genes(
                     snps[snp]['fragments'].remove(snps[snp]['fragments'][i])
             del interactions[enzyme][snp]
     genes_to_remove = []
-    genes_to_keep = []
     del_genefile = open(os.path.join(output_dir, 'genes_removed.txt'), 'w')
     dwriter = csv.writer(del_genefile, delimiter = '\t')
 
@@ -572,8 +571,6 @@ def find_eqtls(
 
 def query_local_databases(
         eqtl_data_dir, genes, gene_dict_fp, snp_dict_fp, p_values, output_dir):
-    """Not used at the moment.
-    """
     print("\tQuerying local databases.")
     num_tests = 0
     to_online_query = []
@@ -592,32 +589,44 @@ def query_local_databases(
         eqtl_index_db = sqlite3.connect(os.path.join(eqtl_data_dir, db))
         eqtl_index_db.text_factory = str
         eqtl_index = eqtl_index_db.cursor()
-        for snp in genes:
+        for snp in genes.keys():
+            variant_id = ''
+            snp_dict.execute("SELECT variant_id FROM lookup WHERE rsID = ?;",
+                             (snp,))
+            snp_fetch = snp_dict.fetchone()
+            if snp_fetch:
+                variant_id = snp_fetch[0]
             for gene in genes[snp]:
-                try:
-                    snp_dict.execute("SELECT variant_id FROM lookup WHERE rsID = ?;",
-                                     (snp,))
-                    variant_id = snp_dict.fetchone()[0]
-                    gene_dict.execute("SELECT gene_id FROM genes WHERE gene_name = ?;",
-                                      (gene,))
-                    gene_id = gene_dict.fetchone()[0]
-                    eqtl_index.execute(
-                        "SELECT pval_nominal, slope FROM associations " +\
-                        "WHERE variant_id=? AND gene_id=?",
-                        (variant_id, gene_id))
-                    if not eqtl_index.fetchall():
-                        to_online_query.append((snp, gene, tissue))
-                        continue
-                    for eqtl in eqtl_index.execute(
-                            "SELECT pval_nominal, slope FROM associations " +\
-                            "WHERE variant_id=? AND gene_id=?",
-                            (variant_id, gene_id)):
+                if variant_id == '':
+                    # SNP is not in snp_dict
+                    to_online_query.append((snp, gene, tissue))
+                    continue
+                gene_id = ''
+                gene_dict.execute("SELECT gene_id FROM genes WHERE gene_name = ?;",
+                                  (gene,))
+                gene_fetch = gene_dict.fetchone()
+                if gene_fetch:
+                    gene_id = gene_fetch[0]
+                else:
+                    # Gene is not in gene_dict
+                    to_online_query.append((snp, gene, tissue))
+                    continue
+                eqtl_index.execute(
+                    "SELECT pval_nominal, slope FROM associations " +\
+                    "WHERE variant_id=? AND gene_id=?",
+                    (variant_id, gene_id))
+                eqtl_fetch = eqtl_index.fetchall()
+                if not eqtl_fetch:
+                    # No SNP-gene eQTL association in tissue
+                    to_online_query.append((snp, gene, tissue))
+                    continue
+                else:
+                    for eqtl in eqtl_fetch:
                         ewriter.writerow((
                             snp, gene, tissue, eqtl[0], eqtl[1]))
                         p_values.append(eqtl[0])
                         num_tests += 1
-                except:
-                    to_online_query.append((snp, gene, tissue))
+
         eqtl_index.close()
         eqtl_index_db.close()
     eqtlfile.close()
