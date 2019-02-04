@@ -950,7 +950,7 @@ def calc_hic_contacts(snp_gene_dict):
 
 def produce_summary(
         p_values, snps, genes, gene_database_fp,
-        expression_table_fp, fdr_threshold, output_dir, buffer_size_in,
+        expression_table_fp, fdr_threshold, do_not_produce, output_dir, buffer_size_in,
         buffer_size_out, num_processes):
     """Write final results of eQTL-eGene associations
 
@@ -959,6 +959,8 @@ def produce_summary(
         genes: The dictionary of genes that interact with SNPs from find_genes
         gene_database_fp: ../../gene_reference.db
         expression_table_fp: ../../GTEx
+        batch_ran: if 'False', do not produce summary, stop when eqtls.txt
+        file is written to output_dir
         output_dir:
 
     Returns:
@@ -989,6 +991,9 @@ def produce_summary(
     """
     num_sig = {}
     # Number of eQTLs deemed significant under the given threshold
+    if do_not_produce_summary:
+        print("Without producing summary files... Done")
+        return
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
     summary = open(output_dir + "/summary.txt", 'w', buffering=buffer_size_out)
@@ -2139,11 +2144,17 @@ if __name__ == "__main__":
                         "This will only include cis-eQTLs if using downloadable " +\
                         "GTEx dataset. "+\
                         "[online] for only online GTEx queries. " +\
-                        "[both] Default. Will query both local and online databases.")
+                        "[both] for both local and online queries " +\
+                        "(default: both).")
+    parser.add_argument("-d", "--do_not_produce_summary", action="store_true", default=False,
+                        help="Do not produce summary files, stop process after " +\
+                        "querying GTEx (default: False).")
     parser.add_argument("-s", "--suppress_intermediate_files", action="store_true",
-                        default=False, help="Do not produce intermediate " +\
+                        default=False,
+                        help="Do not produce intermediate " +\
                         "files. These can be used to run the pipeline from " +\
-                        "an intermediate stage in the event of interruption.")
+                        "an intermediate stage in the event of interruption " +\
+                        "(default: False).")
     parser.add_argument("-p", "--num_processes", type=int, default=1,
                         help="Desired number of processes for multithreading " +\
                         "(default: 1).")
@@ -2156,7 +2167,7 @@ if __name__ == "__main__":
     parser.add_argument("-b","--buffer_size_in",type=int,default=1048576,
                         help="Buffer size applied to file input during " +\
                         "compilation (default: 1048576).")
-    parser.add_argument("-d","--buffer_size_out",type=int,default=1048576,
+    parser.add_argument("-z","--buffer_size_out",type=int,default=1048576,
                         help="Buffer size applied to file output during " +\
                         "compilation (default: 1048576).")
     parser.add_argument("-t", "--num_processes_summary", type=int,
@@ -2215,5 +2226,5 @@ if __name__ == "__main__":
         suppress_intermediate_files=args.suppress_intermediate_files)
     produce_summary(
          p_values, snps, genes, gene_database_fp, expression_table_fp,
-         args.fdr_threshold, args.output_dir, args.buffer_size_in,
+         args.fdr_threshold, args.do_not_produce_summary, args.output_dir, args.buffer_size_in,
          args.buffer_size_out, args.num_processes_summary)
