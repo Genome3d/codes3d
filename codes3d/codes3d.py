@@ -950,7 +950,7 @@ def calc_hic_contacts(snp_gene_dict):
 
 def produce_summary(
         p_values, snps, genes, gene_database_fp,
-        expression_table_fp, fdr_threshold, do_not_produce, output_dir, buffer_size_in,
+        expression_table_fp, fdr_threshold, do_not_produce_summary, output_dir, buffer_size_in,
         buffer_size_out, num_processes):
     """Write final results of eQTL-eGene associations
 
