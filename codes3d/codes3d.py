@@ -989,11 +989,144 @@ def produce_summary(
         sig_eqtls.text: A file with eQTL associations with
             adj_p_values <= FDR threshold. Same structure as summary.txt
     """
-    num_sig = {}
-    # Number of eQTLs deemed significant under the given threshold
     if do_not_produce_summary:
         print("Without producing summary files... Done")
         return
+
+    num_sig = {}
+    # Number of eQTLs deemed significant under the given threshold
+    gene_index_db = sqlite3.connect(gene_database_fp)
+    gene_index_db.text_factory = str
+    query_str = "SELECT chr, start, end FROM genes WHERE symbol=?"
+    p_values_map = {}
+    print('Adjusting p-values...')
+    adjusted_p_values = compute_adj_pvalues(p_values)
+    for i in range(len(p_values)):
+        p_values_map[p_values[i]] = adjusted_p_values[i]
+
+    to_file = []
+    global gene_exp
+    gene_exp = {}
+    snps_genes = set()
+    genes_tissues = set()
+    eqtlfile = open(os.path.join(output_dir, 'eqtls.txt'), 'r',
+                    buffering=buffer_size_in)
+    ereader = csv.reader(eqtlfile, delimiter = '\t')
+
+    for i, row in enumerate(ereader):
+        snp = row[0]
+        gene = row[1]
+        tissue = row[2]
+        p_val = row[3]
+        effect_size = row[4]
+        qvalue = p_values_map[float(p_val)]
+        snp_info = {
+            "chr": snps[snp]["chr"],
+            "locus": snps[snp]["locus"],
+            "fragments": snps[snp]["fragments"]}
+        gene_chr = "NA"
+        gene_start = "NA"
+        gene_end = "NA"
+        max_length = 0
+        snps_genes.add((snp,gene))
+        genes_tissues.add((gene, tissue))
+        gene_stat = gene_index_db.execute(query_str, (gene,)).fetchone()
+        # Consider "canonical" to be the longest record where
+        # multiple records are present
+        if abs(gene_stat[2] - gene_stat[1]) > max_length:
+            if gene_stat[0].startswith("chr"):
+                gene_chr = gene_stat[0][3:]
+            else:
+                gene_chr = gene_stat[0]
+            gene_start = gene_stat[1]
+            gene_end = gene_stat[2]
+        max_length = gene_stat[2] - gene_stat[1]
+        p_thresh = "NA"
+        # eQTL is cis if the SNP is within 1Mbp of the gene on the same
+        # chromosome
+        cis = gene_chr == snp_info["chr"] and (
+            (snp_info["locus"] > gene_start - 1000000) and
+            (snp_info["locus"] < gene_end + 1000000))
+        cell_lines = ''
+        try:
+            cell_lines = list(genes[snp][gene])
+        except KeyError:
+            cell_lines = "NA"
+        interaction = True
+        if cis:
+            interaction = True
+        else:
+            interaction = False
+        distance_from_snp = 0
+        if(gene_chr == "NA"):
+            distance_from_snp = "NA"  # If gene location information is missing
+        elif(not snp_info["chr"] == gene_chr):
+            distance_from_snp = "NA"  # Not applicable to trans interactions
+        elif(snp_info["locus"] < gene_start):
+            distance_from_snp = gene_start - snp_info["locus"]
+        elif(snp_info["locus"] > gene_end):
+            distance_from_snp = snp_info["locus"] - gene_end
+        to_file.append([snp,
+                        snp_info["chr"],
+                        snp_info["locus"],
+                        gene,
+                        gene_chr,
+                        gene_start,
+                        gene_end,
+                        tissue,
+                        p_val,
+                        qvalue,
+                        effect_size,
+                        p_thresh,
+                        interaction,
+                        distance_from_snp])
+        if gene not in gene_exp:
+            gene_exp[gene] = {}
+    eqtlfile.close()
+    
+    global GENE_DF
+    # Efficiently allowing access to a shared namespace by individual processes
+    GENE_DF = pandas.read_table(expression_table_fp, index_col="Description",
+                                engine='c', compression=None, memory_map=True)
+
+    all_snps = genes.keys()
+    all_genes = dict.fromkeys(gene_exp).keys()
+    all_tissues = list(GENE_DF)
+    genes_tissues = list(genes_tissues)
+    snps_genes = list(snps_genes)
+
+    current_process = psutil.Process()
+    pool = multiprocessing.Pool(processes=min(num_processes,
+                                          len(current_process.cpu_affinity())))
+
+    print("Collecting gene expression rates...")
+    expression = pool.map(get_expression, genes_tissues)
+    del GENE_DF
+
+    for i in range(len(genes_tissues)):
+        gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = expression[i][0]
+
+    print("Determining gene expression extremes...")
+    extremes = pool.map(get_expression_extremes,
+                        [gene_exp[gene] for gene in all_genes])
+    for i in range(len(all_genes)):
+        gene_exp[all_genes[i]]['max_tissue'] = extremes[i][0]
+        gene_exp[all_genes[i]]['max_rate'] = extremes[i][1]
+        gene_exp[all_genes[i]]['min_tissue'] = extremes[i][2]
+        gene_exp[all_genes[i]]['min_rate'] = extremes[i][3]
+
+    for i in range(len(genes_tissues)):
+        gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = expression[i][1]
+
+    print("Computing HiC data...")
+    hic_data = pool.map(calc_hic_contacts,
+                        [genes[snp][gene] for snp, gene in snps_genes])
+    global hic_dict
+    hic_dict = {}
+    for i in range(len(snps_genes)):
+        hic_dict[snps_genes[i]] = hic_data[i]
+
+    print("Writing to summary files...")
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
     summary = open(output_dir + "/summary.txt", 'w', buffering=buffer_size_out)
@@ -1021,196 +1154,43 @@ def produce_summary(
                    'Min_Expressed_Tissue',
                    'Min_Expression_Level']
     summ_writer.writerow(summ_header)
+    to_file = [insert_hic_info(line, line[0], line[3], line[7]) for line in to_file]
+    summ_writer.writerows(to_file)
+    summary.close()
     sig_file = open(os.path.join(output_dir, 'significant_eqtls.txt'), 'w',
                     buffering=buffer_size_out)
     sigwriter = csv.writer(sig_file, delimiter='\t')
     sigwriter.writerow(summ_header)
-    gene_index_db = sqlite3.connect(gene_database_fp)
-    gene_index_db.text_factory = str
-    col_names = [res[1]
-                 for res in gene_index_db.execute("PRAGMA table_info(genes)")]
-    include_p_thresh = "p_thresh" in col_names
-    if include_p_thresh:
-        query_str = ("SELECT chr, start, end, p_thresh FROM genes "
-                     "WHERE symbol=?")
-    else:
-        query_str = "SELECT chr, start, end FROM genes WHERE symbol=?"
-    eqtlfile = open(os.path.join(output_dir, 'eqtls.txt'), 'r',
-                    buffering=buffer_size_in)
-    ereader = csv.reader(eqtlfile, delimiter = '\t')
-
-    p_values_map = {}
-    print('Adjusting p-values...')
-    adjusted_p_values = compute_adj_pvalues(p_values)
-    for i in range(len(p_values)):
-        p_values_map[p_values[i]] = adjusted_p_values[i]
-
-    tmp_genes = []
-    for a in genes:
-        tmp_genes.extend(genes[a].keys())
-
-    to_file = []
-    gene_exp = {}
-    for i, row in enumerate(ereader):
-        if row[1] in tmp_genes:
-            snp = row[0]
-            gene = row[1]
-            tissue = row[2]
-            p_val = row[3]
-            effect_size = row[4]
-            qvalue = p_values_map[float(p_val)]
-            snp_info = {
-                "chr": snps[snp]["chr"],
-                "locus": snps[snp]["locus"],
-                "fragments": snps[snp]["fragments"]}
-            gene_chr = "NA"
-            gene_start = "NA"
-            gene_end = "NA"
-            max_length = 0
-            gene_stat = gene_index_db.execute(query_str, (gene,)).fetchone()
-            # Consider "canonical" to be the longest record where
-            # multiple records are present
-            if abs(gene_stat[2] - gene_stat[1]) > max_length:
-                if gene_stat[0].startswith("chr"):
-                    gene_chr = gene_stat[0][3:]
-                else:
-                    gene_chr = gene_stat[0]
-                gene_start = gene_stat[1]
-                gene_end = gene_stat[2]
-            max_length = gene_stat[2] - gene_stat[1]
-            if include_p_thresh:
-                p_thresh = gene_stat[3]
-            else:
-                p_thresh = "NA"
-            # eQTL is cis if the SNP is within 1Mbp of the gene on the same
-            # chromosome
-            cis = gene_chr == snp_info["chr"] and (
-                (snp_info["locus"] > gene_start - 1000000) and
-                (snp_info["locus"] < gene_end + 1000000))
-            cell_lines = ''
-            try:
-                cell_lines = list(genes[snp][gene])
-            except KeyError:
-                cell_lines = "NA"
-            p_thresh = p_thresh
-            interaction = True
-            if cis:
-                interaction = True
-            else:
-                interaction = False
-            distance_from_snp = 0
-            if(gene_chr == "NA"):
-                distance_from_snp = "NA"  # If gene location information is missing
-            elif(not snp_info["chr"] == gene_chr):
-                distance_from_snp = "NA"  # Not applicable to trans interactions
-            elif(snp_info["locus"] < gene_start):
-                distance_from_snp = gene_start - snp_info["locus"]
-            elif(snp_info["locus"] > gene_end):
-                distance_from_snp = snp_info["locus"] - gene_end
-            to_file.append([snp,
-                    snp_info["chr"],
-                    snp_info["locus"],
-                    gene,
-                    gene_chr,
-                    gene_start,
-                    gene_end,
-                    tissue,
-                    p_val,
-                    qvalue,
-                    effect_size,
-                    p_thresh,
-                    interaction,
-                    distance_from_snp])
-            if gene not in gene_exp:
-                gene_exp[gene] = {}
-
-    global GENE_DF
-    # Efficiently allowing access to a shared namespace by individual processes
-    GENE_DF = pandas.read_table(expression_table_fp, index_col="Description",
-                                engine='c', compression=None, memory_map=True)
-
-    all_snps = genes.keys()
-    all_genes = dict.fromkeys(gene_exp).keys()
-    all_tissues = list(GENE_DF)
-
-    genes_tissues = [
-            (gene, tissue) for gene in all_genes for tissue in all_tissues]
-    snps_genes = [(snp, gene) for snp in all_snps for gene in all_genes]
-
-    current_process = psutil.Process()
-    pool = multiprocessing.Pool(processes=min(num_processes,
-                                          len(current_process.cpu_affinity())))
-
-    print("Collecting gene expression rates...")
-    expression = pool.map(get_expression, genes_tissues)
-    del GENE_DF
-
-    for i in range(len(genes_tissues)):
-        gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = expression[i][0]
-
-    print("Determining gene expression extremes...")
-    extremes = pool.map(get_expression_extremes,
-                        [gene_exp[gene] for gene in all_genes])
-    for i in range(len(all_genes)):
-        gene_exp[all_genes[i]]['max_tissue'] = extremes[i][0]
-        gene_exp[all_genes[i]]['max_rate'] = extremes[i][1]
-        gene_exp[all_genes[i]]['min_tissue'] = extremes[i][2]
-        gene_exp[all_genes[i]]['min_rate'] = extremes[i][3]
-
-    for i in range(len(genes_tissues)):
-        gene_exp[genes_tissues[i][0]][genes_tissues[i][1]] = expression[i][1]
-
-    print("Computing HiC data...")
-
-    to_delete_snps_genes = []
-    for snp, gene in snps_genes:
-        try:
-            genes[snp][gene]
-        except KeyError:
-            to_delete_snps_genes.append((snp, gene))
-
-    snps_genes = [pair for pair in snps_genes if pair not in to_delete_snps_genes]
-
-    hic_data = pool.map(calc_hic_contacts,
-                        [genes[snp][gene] for snp, gene in snps_genes])
-
-    hic_dict = {}
-    for i in range(len(snps_genes)):
-        hic_dict[snps_genes[i]] = hic_data[i]
-
-    print("Writing to summary files...")
-
-    for line in to_file:
-        snp = line[0]
-        gene = line[3]
-        tissue = line[7]
-        snp_gene = (snp, gene)
-        if snp_gene in hic_dict.keys():
-            try:
-                line.insert(11, hic_dict[(snp, gene)][2])
-                line.insert(11, hic_dict[(snp, gene)][1])
-                line.insert(11, hic_dict[(snp, gene)][0])
-            except KeyError:
-                line.insert(11, 'NA')
-                line.insert(11, 'NA')
-                line.insert(11, 'NA')
-            line.append(gene_exp[gene][tissue])
-            line.append(gene_exp[gene]['max_tissue'])
-            line.append(gene_exp[gene]['max_rate'])
-            line.append(gene_exp[gene]['min_tissue'])
-            line.append(gene_exp[gene]['min_rate'])
-            summ_writer.writerow(line)
-            if line[9] < fdr_threshold:
-                try:
-                    num_sig[snp] += 1
-                except KeyError:
-                    num_sig[snp] = 1
-                sigwriter.writerow(line)
-
-    summary.close()
+    sig_eqtls = [line for line in to_file if line[9] < fdr_threshold]
+    sigwriter.writerows(sig_eqtls)
     sig_file.close()
-    return (num_sig)
+    
 
+    return (len(sig_eqtls))
+
+def insert_hic_info(line, snp, gene, tissue):
+    try:
+        line.insert(11, hic_dict[(snp, gene)][2])
+        line.insert(11, hic_dict[(snp, gene)][1])
+        line.insert(11, hic_dict[(snp, gene)][0])
+        line.extend((
+            round(gene_exp[gene][tissue], 4),
+            gene_exp[gene]['max_tissue'],
+            round(gene_exp[gene]['max_rate'], 4),
+            gene_exp[gene]['min_tissue'],
+            round(gene_exp[gene]['min_rate'], 4)))
+        return(line)
+    except KeyError:
+        line.insert(11, 'NA')
+        line.insert(11, 'NA')
+        line.insert(11, 'NA')
+        line.extend((
+            round(gene_exp[gene][tissue], 4),
+            gene_exp[gene]['max_tissue'],
+            round(gene_exp[gene]['max_rate'], 4),
+            gene_exp[gene]['min_tissue'],
+            round(gene_exp[gene]['min_rate'], 4)))
+        return line
 
 def compute_adj_pvalues(p_values):
     """ A Benjamini-Hochberg adjustment of p values of SNP-gene eQTL
@@ -1458,8 +1438,8 @@ def parse_genes_files(genes_files):
     return genes
 
 ### Function to remove duplicate lines from txt files
-def remove_dups(inputfile, outputfile):
-    lines = open(inputfile, 'r').readlines()
+def remove_dups(inputfile, outputfile, buffer_size_in):
+    lines = open(inputfile, 'r', buffering=buffer_size_in).readlines()
     lines_set = set(lines)
     out = open(outputfile, 'w')
     for line in lines_set:
@@ -1468,7 +1448,7 @@ def remove_dups(inputfile, outputfile):
 
 def parse_eqtls_files(
         eqtls_files, snp_database_fp, gene_database_fp,
-        restriction_enzymes, lib_fp, output_dir, fdr_threshold=0.05):
+        restriction_enzymes, lib_fp, output_dir, buffer_size_in, fdr_threshold=0.05):
     print("Merging files...")
     eqtls = {}
     snps = {}
@@ -1476,20 +1456,13 @@ def parse_eqtls_files(
     p_values = []  # A sorted list of all p-values for use computing FDR
     num_tests = 0  # Total number of tests done
     num_sig = {}  # Number of eQTLs deemed significant under the given threshold
-    # eqtls_files = eqtls_files.split(' ') #@Tayaza: Separate individual eqtl
-    # files
     snp_dp = sqlite3.connect(snp_database_fp)
     snp_dp.text_factory = str
     snp_index = snp_dp.cursor()
-    gene_dp = sqlite3.connect(gene_database_fp)
-    gene_dp.text_factory = str
-    gene_index = snp_dp.cursor()
-    file_count = 1
     genes_files = []
     snps_files = []
 
     joined_eqtls_file = open(os.path.join(output_dir, 'tmp_eqtls.txt'), 'w')
-
     #print("Merging eqtls files...")
     for eqtls_file in eqtls_files:
         file_path = eqtls_file[:len(eqtls_file)-9]
@@ -1504,41 +1477,40 @@ def parse_eqtls_files(
         else:
             print('\t\tOops!: We can\'t find  \'snps.txt\' file in the same' +\
                   ' directory as \'eqtls.txt\'. \n\t\tSome info will be missing.')
-        #print('\tMerging eQTL file {} of {}'.format(file_count, len(eqtls_files)))
         with open(eqtls_file, 'r') as efile:
             shutil.copyfileobj(efile, joined_eqtls_file)
-        #file_count += 1
+
     joined_eqtls_file.close()
 
-    #print("Removing duplicates from merged eqtls...")
+    # Removing duplicates from merged eqtls
     uniq_eqtls = os.path.join(output_dir, 'eqtls.txt')
-    remove_dups(os.path.join(output_dir, 'tmp_eqtls.txt'), uniq_eqtls)
+    remove_dups(os.path.join(output_dir, 'tmp_eqtls.txt'), uniq_eqtls, buffer_size_in)
     os.remove(os.path.join(output_dir, 'tmp_eqtls.txt'))
 
-    #print("Merging genes files...")
+    # Merging genes files
     joined_genes_file = open(os.path.join(output_dir, 'tmp_genes.txt'), 'w')
     for genes_file in genes_files:
         with open(genes_file, 'rb') as gfile:
             shutil.copyfileobj(gfile, joined_genes_file)
     joined_genes_file.close()
 
-    #print("Removing duplicates from merged genes...")
+    # Removing duplicates from merged genes
     uniq_genes = os.path.join(output_dir, 'genes.txt')
-    remove_dups(os.path.join(output_dir, 'tmp_genes.txt'), uniq_genes)
+    remove_dups(os.path.join(output_dir, 'tmp_genes.txt'), uniq_genes, buffer_size_in)
     os.remove(os.path.join(output_dir, 'tmp_genes.txt'))
     print("Parsing genes...")
     genes = parse_genes_files(os.path.join(output_dir, 'genes.txt'))
 
-    #print("Merging snps files...")
+    # Merging snps files
     joined_snps_file = open(os.path.join(output_dir, 'tmp_snps.txt'), 'w')
     for snps_file in snps_files:
         with open(snps_file, 'r') as sfile:
             shutil.copyfileobj(sfile, joined_snps_file)
     joined_snps_file.close()
 
-    #print("Removing duplicates from merged snps...")
+    # Removing duplicates from merged snps
     uniq_snps = os.path.join(output_dir, 'snps.txt')
-    remove_dups(os.path.join(output_dir, 'tmp_snps.txt'), uniq_snps)
+    remove_dups(os.path.join(output_dir, 'tmp_snps.txt'), uniq_snps, buffer_size_in)
     os.remove(os.path.join(output_dir, 'tmp_snps.txt'))
 
     print("Parsing eqtls...")
@@ -1592,8 +1564,7 @@ def parse_eqtls_files(
     eqtlfile.close()
     snp_index.close()
     snp_dp.close()
-    #gene_index.close()
-    #gene_dp.close()
+
 
     return (p_values, snps, genes)
 
