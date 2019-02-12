@@ -1174,22 +1174,22 @@ def insert_hic_info(line, snp, gene, tissue):
         line.insert(11, hic_dict[(snp, gene)][1])
         line.insert(11, hic_dict[(snp, gene)][0])
         line.extend((
-            round(gene_exp[gene][tissue], 4),
+            round(gene_exp[gene][tissue], 2),
             gene_exp[gene]['max_tissue'],
-            round(gene_exp[gene]['max_rate'], 4),
+            round(gene_exp[gene]['max_rate'], 2),
             gene_exp[gene]['min_tissue'],
-            round(gene_exp[gene]['min_rate'], 4)))
-        return(line)
-    except KeyError:
+            round(gene_exp[gene]['min_rate'], 2)))
+        return line
+    except:
         line.insert(11, 'NA')
         line.insert(11, 'NA')
         line.insert(11, 'NA')
         line.extend((
-            round(gene_exp[gene][tissue], 4),
+            gene_exp[gene][tissue],
             gene_exp[gene]['max_tissue'],
-            round(gene_exp[gene]['max_rate'], 4),
+            gene_exp[gene]['max_rate'],
             gene_exp[gene]['min_tissue'],
-            round(gene_exp[gene]['min_rate'], 4)))
+            gene_exp[gene]['min_rate']))
         return line
 
 def compute_adj_pvalues(p_values):
