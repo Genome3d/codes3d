@@ -563,7 +563,7 @@ def find_genes(
             genes = dict_merge(genes, genes_dict)
 
     temp_files = [os.path.join(output_dir, temp_file)
-                  for temp_file in os.path.listdir(output_dir)
+                  for temp_file in os.listdir(output_dir)
                   if temp_file.startswith('temp_snp_bed')]
     for temp_file in temp_files:
         os.remove(temp_file)
