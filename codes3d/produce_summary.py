@@ -61,8 +61,8 @@ if __name__ == "__main__":
             config.get("Defaults","LIB_DIR"))
     restriction_enzymes = config.get("Defaults", "HIC_RESTRICTION_ENZYMES")
     if not os.path.isdir(args.output_dir):
-	    print('\tCreating output directory..')
-	    os.mkdir(args.output_dir)
+	print('Creating output directory..')
+	os.mkdir(args.output_dir)
     p_values, snps, genes = codes3d.parse_eqtls_files(
         args.eqtls_files, snp_database_fp, gene_database_fp,
         restriction_enzymes, lib_fp, args.output_dir, args.buffer_size_in, args.fdr_threshold)
