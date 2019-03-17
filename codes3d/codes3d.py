@@ -1286,9 +1286,9 @@ def produce_summary(
 
 def insert_hic_info(line, snp, gene, tissue):
     try:
-        line.insert(11, hic_dict[(snp, gene)][2])
-        line.insert(11, hic_dict[(snp, gene)][1])
-        line.insert(11, hic_dict[(snp, gene)][0])
+        line.insert(12, hic_dict[(snp, gene)][2])
+        line.insert(12, hic_dict[(snp, gene)][1])
+        line.insert(12, hic_dict[(snp, gene)][0])
         line.extend((
             round(gene_exp[gene][tissue], 2),
             gene_exp[gene]['max_tissue'],
@@ -1307,9 +1307,9 @@ def insert_hic_info(line, snp, gene, tissue):
         return line
     except KeyError:
         # Hi-C score for SNP-Gene is likely missing.
-        line.insert(11, 'NA')
-        line.insert(11, 'NA')
-        line.insert(11, 'NA')
+        line.insert(12, 'NA')
+        line.insert(12, 'NA')
+        line.insert(12, 'NA')
         line.extend((
             gene_exp[gene][tissue],
             gene_exp[gene]['max_tissue'],
