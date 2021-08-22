@@ -1,0 +1,13 @@
+# python3 version >3.5.2
+pandas
+requests
+pybedtools
+biopython
+matplotlib
+statsmodels
+tqdm
+scikits.bootstrap
+torch
+pandas_plink
+sqlalchemy
+sqlalchemy_utils
