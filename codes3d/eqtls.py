@@ -14,9 +14,7 @@ import time
 import multiprocessing
 import tqdm
 from itertools import repeat
-#import sqlite3
 import statsmodels.stats.multitest as multitest
-#from sqlalchemy_utils import database_exists
 import argparse
 import configparser
 import codes3d
@@ -30,10 +28,10 @@ def create_db(tissue, logger):
     database = 'eqtls_gtex_{}'.format(tissue.lower())
     try:
         conn = psycopg2.connect(
-            host='127.0.0.1',
+            host='',
             # database=database,
-            user='codes3d',
-            password='codes3d'
+            user='',
+            password=''
         )
         conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
         cur = conn.cursor()
@@ -59,10 +57,10 @@ def create_eqtls_table(tissue, logger):
     database = 'eqtls_gtex_{}'.format(tissue.lower())
     try:
         conn = psycopg2.connect(
-            host='127.0.0.1',
+            host='',
             database=database,
-            user='codes3d',
-            password='codes3d'
+            user='',
+            password=''
         )
         conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
         cur = conn.cursor()
@@ -107,7 +105,20 @@ def migrate_to_postgres(fp, postgres_url):
         logger.write('Time elapsed: {} mins.\n'.foramt(
             (time.time()-start_time)/60))
 
+def map_tissue_eqtls_non_spatial(
+        tissue,
+        snp_df,
+        eqtls,
+        eqtl_project,
+        eqtl_data_dir):
+    tissue_fp = 'GTEx_Analysis_v8_eQTL/{}.v8.signif_variant_gene_pairs.txt.gz'.format(tissue)
+    eqtl_fp = os.path.join(eqtl_data_dir, eqtl_project, tissue_fp)
+    tissue_eqtl_df = pd.read_csv(eqtl_fp, sep='\t', compression='gzip')
+    eqtl_df = snp_df[['snp', 'variant_id']].drop_duplicates().merge(
+        tissue_eqtl_df, how='inner', on=['variant_id'])
+    eqtls.append(eqtl_df)
 
+    
 def map_tissue_eqtls(
         tissue,
         pairs_df,
@@ -136,8 +147,9 @@ def map_tissue_eqtls(
         return
     covariates_df = pd.read_csv(covariates_fp, sep='\t', index_col=0).T
     phenotype_df, pos_df = tensorqtl.read_phenotype_bed(phenotype_fp)
-    phenotype_df = phenotype_df[
-        phenotype_df.index.isin(pairs_df['pid'])]
+    if pairs_df['pid'].iloc[0] != '': # Spatial connections
+        phenotype_df = phenotype_df[
+            phenotype_df.index.isin(pairs_df['pid'])]
     eqtl_df = trans.map_trans(
         genotype_df,
         phenotype_df,
@@ -151,19 +163,9 @@ def map_tissue_eqtls(
     eqtls.append(eqtl_df[~((eqtl_df['variant_id'].isnull()) |
                            (eqtl_df['phenotype_id'].isnull()))])
 
-def fetch_genotypes_deprecated(db, df):
-    genotypes = []
-    sql = '''SELECT * FROM genotype WHERE snp = '{}' '''
-    with db.connect() as con:
-        for snp in df.index.values:
-            genotypes.append(pd.read_sql(
-                sql.format(snp), con=con))
-    if len(genotypes) > 0:
-        return pd.concat(genotypes)
-    return pd.DataFrame()
-
 
 def fetch_genotypes(db, snp):
+    db.dispose()
     df = pd.DataFrame()
     with db.connect() as con:
         df = pd.read_sql(
@@ -174,73 +176,8 @@ def fetch_genotypes(db, snp):
     else:
         return pd.DataFrame({'snp': [snp]}, columns=df.columns).iloc[0]
 
-def chunk_list(it, size):
-    for i in range(0, len(it), size):
-        yield it[i:i+size]
-        
-def calc_chunksize(loci, distance):
-    if len(loci) == 1:
-        return 1
-    diff = abs(max(loci) - min(loci))
-    while diff > distance:
-        chunks = [chunk for chunk in chunk_list(loci, int((len(loci)/2)+1))]
-        if(len(chunks)==1):
-            return(diff)
-        if abs(max(chunks[0])-min(chunks[0])) > abs(max(chunks[1])-min(chunks[1])):
-            loci = sorted(chunks[0])
-        else:
-            loci = sorted(chunks[1])
-        diff = abs(max(loci)-min(loci))
-    return diff
-            
-def fetch_genotypes_beta(db, df):
-    genotypes = []
-    chroms = df.groupby(['chrom']).agg({'pos': [np.min, np.max]})
-    chroms.columns = chroms.columns.droplevel()
-    chroms['distance'] = chroms['amax'] - chroms['amin']
-    chunksize = calc_chunksize(
-        df[df['chrom']==chroms['distance'].idxmax()].sort_index().reset_index(
-            drop=True)['pos'].astype(int).tolist(),
-        20000 # Bigger numbers can cause out shared memory errors
-    )
-    chunks = [df[i:i+chunksize] for i in range(0, len(df), chunksize)]
-    desc = '  * Loading genotypes'
-    bar_format = '{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} {unit}'
 
-    pbar = tqdm.tqdm(total=len(df), desc=desc, bar_format=bar_format,
-                     unit='variants', ncols=80)
-    sql = '''SELECT * FROM genotype WHERE snp >= '{}' AND snp <= '{}' '''
-    with db as con:
-        for chunk in chunks:
-            res = pd.read_sql(
-                sql.format(chunk.index.min(), chunk.index.max()), con=con)
-            genotypes.append(res[res['snp'].isin(chunk.index)])
-            pbar.update(len(chunk))
-    pbar.close()
-    if len(genotypes) > 0:
-        return pd.concat(genotypes)
-    return pd.DataFrame()
-
-
-def fetch_genotypes_raw(db, df):
-    genotypes = []
-    desc = '  * Loading genotypes'
-    bar_format = '{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} {unit}'
-    with db.connect() as con:
-        for idx, row in tqdm.tqdm(
-                df.iterrows(), total=len(df), desc=desc, bar_format=bar_format,
-                unit='variants', ncols=80):
-            res = pd.read_sql(
-                '''SELECT * FROM genotype WHERE snp = '{}' '''.format(
-                    row.name), con=con)
-            if not res.empty:
-                genotypes.append(res)
     
-    if len(genotypes) > 0:
-        return pd.concat(genotypes)
-    else:
-        return pd.DataFrame()
-
 def map_eqtls(
         gene_df,
         tissues,
@@ -266,8 +203,16 @@ def map_eqtls(
         'sid': 'snp',
         'sid_chr': 'chrom',
         'sid_pos': 'pos'})
-    variant_df = variant_df.set_index('snp')
-    genotype_df = fetch_genotypes_raw(db, variant_df)
+    '''
+    for idx, row in variant_df.iterrows():
+        fetch_genotypes(db, row['snp'])
+        sys.exit()
+    '''
+    desc = '  * Loading genotypes'
+    bar_format = '{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} {unit}'
+    tqdm.tqdm.pandas(desc=desc, bar_format=bar_format, unit='SNPs', ncols=80)
+    genotype_df = variant_df.snp.progress_apply(lambda snp: fetch_genotypes(db, snp))
+    variant_df = variant_df.set_index('snp').sort_index(axis=0)
     if genotype_df.empty:
         logger.write('Variants were not found in database.')
         return
@@ -297,9 +242,7 @@ def map_eqtls(
                     unit='tissues', ncols=80):
                 pass
     else:
-        batch_size = int(len(pairs_df)/num_processes)
-        if batch_size < 1:
-            batch_size = 1
+        batch_size = 20000
         pairs_batches = [pairs_df[i:i+batch_size]
                          for i in range(0, len(pairs_df), batch_size)]        
         with multiprocessing.Pool(num_processes) as pool:
@@ -337,20 +280,52 @@ def map_eqtls(
         ['sid', 'pid', 'tissue'])['b'].transform('min')
     eqtl_df['b_se'] = eqtl_df.groupby(
         ['sid', 'pid', 'tissue'])['b_se'].transform('min')
-    eqtl_df = eqtl_df.drop_duplicates()
-    eqtl_df['adj_pval'] = multitest.multipletests(
-        eqtl_df['pval'], method='fdr_bh')[1]
+    eqtl_df = eqtl_df.drop_duplicates()    
     cols = ['sid', 'pid', 'sid_chr', 'sid_pos',
-            'adj_pval', 'pval', 'b', 'b_se', 'maf', 'tissue']
-    logger.write('  * {} eQTL associations tested'.format(len(eqtl_df)))
-    logger.write('  * {} eQTL associations passed FDR <= {}.'.format(
-        len(eqtl_df[eqtl_df['adj_pval'] <= fdr_threshold]),
-        fdr_threshold))
-    logger.write('  * eQTLs mapped at MAF >= {} and pval threshold <={}.'.format(
-        maf_threshold, pval_threshold))
+            'pval', 'b', 'b_se', 'maf', 'tissue']
+
+    return eqtl_df[cols]    
+
+
+def map_eqtls_non_spatial(
+        snp_df,
+        tissues,
+        eqtl_data_dir,
+        num_processes,
+        db,
+        logger
+):
+    start_time = time.time()
+    logger.write("Identifying eQTLs...")
+    eqtl_project = tissues['project'].tolist()[0]
+    tissues = tissues['name']
+    manager = multiprocessing.Manager()
+    eqtls = manager.list()
+    desc = '  * Mapping eQTLs'
+    bar_format = '{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} {unit}'
+    with multiprocessing.Pool(num_processes) as pool:
+        for _ in tqdm.tqdm(
+                pool.istarmap(
+                    map_tissue_eqtls_non_spatial,
+                    zip(tissues,
+                        repeat(snp_df),
+                        repeat(eqtls),
+                        repeat(eqtl_project),
+                        repeat(eqtl_data_dir))
+                ),
+                total=len(tissues), desc=desc, bar_format=bar_format,
+                unit='tissues', ncols=80):
+            pass
+    eqtl_df = pd.DataFrame()
+    if len(eqtls) > 0:
+        eqtl_df = pd.concat(eqtls)
+    if eqtl_df.empty:
+        return eqtl_df
+    logger.write('  * {} eQTL associations identified.'.format(
+        len(eqtl_df)))
     logger.write('  Time elasped: {:.2f} mins.'.format(
         (time.time() - start_time)/60))
-    return eqtl_df[cols]
+    return eqtl_df
 
 
 def parse_args():
@@ -363,8 +338,20 @@ def parse_args():
         help='''Filepath to the directory containing batch subdirectories
         'each containing genes.txt.''')
     parser.add_argument(
+        '-s', '--snp', default=None,
+        help='SNP rsID or position for which eGenes are to be obtained.')
+    parser.add_argument(
+        '-g', '--gene', default=None,
+        help='Gene for which eQTLs are to be obtained.')
+    parser.add_argument(
         "-o", "--output-dir", required=True,
         help="The directory in which to output results.")
+    parser.add_argument(
+        '--multi-test', default = 'multi',
+        help='''Options for BH multiple-testing: ['snp', 'tissue', 'multi'].  
+        'snp': corrects for genes associated with a given SNP in a given tissue. 
+        'tissue': corrects for all associations in a given tissue. 
+        'multi': corrects for all associations across all tissues tested.''')
     parser.add_argument(
         '--pval-threshold', default=1,
         help='Maximum p value for mapping eQTLs. Default: 1.')
@@ -445,8 +432,19 @@ if __name__ == '__main__':
         args.pval_threshold,
         args.maf_threshold,
         args.fdr_threshold,
-        logger
-    )
+        logger)
+    
+    eqtl_df = codes3d.multi_test_correction(eqtl_df, args.multi_test)
+    
+    logger.write('  * {} eQTL associations tested'.format(len(eqtl_df)))
+    logger.write('  * {} eQTL associations passed FDR <= {}.'.format(
+        len(eqtl_df[eqtl_df['adj_pval'] <= args.fdr_threshold]),
+        args.fdr_threshold))
+    logger.write('  * eQTLs mapped at MAF >= {} and pval threshold <={}.'.format(
+        args.maf_threshold, args.pval_threshold))
+    logger.write('  Time elasped: {:.2f} mins.'.format(
+        (time.time() - start_time)/60))
+
     if not args.suppress_intermediate_files:
         gene_df.to_csv(os.path.join(
             args.output_dir, 'genes.txt'), sep='\t', index=False)

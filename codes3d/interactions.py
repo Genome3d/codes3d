@@ -17,9 +17,7 @@ def get_cell_interactions(
         replicate,
         query_type,
         df,
-        interactions,
-        lib_dir,
-):
+        interactions):
     cell_line = os.path.dirname(replicate).split('/')[-1]
     rep_interactions = []
     
@@ -66,7 +64,6 @@ def find_interactions(
         query_type,
         lib_dir,
         hic_df,
-        #output_dir,
         num_processes,
         logger,
         suppress_intermediate_files=False):
@@ -106,10 +103,7 @@ def find_interactions(
                                       replicates,
                                       repeat(query_type),
                                       repeat(enzyme_df),
-                                      repeat(gene_interactions),
-                                      repeat(lib_dir),
-                                      #repeat(enzyme_qc_df),
-                                      #repeat(enzyme_qc_all_df)
+                                      repeat(gene_interactions)
                                   )
                                   ),
                     total=len(replicates),

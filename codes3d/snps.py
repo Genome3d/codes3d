@@ -484,7 +484,7 @@ def process_snp_input(inputs, output_dir, db,
             with open(inp) as f:
                 for line in f:
                     if not line.strip() == '':
-                        df.append([line.strip()])
+                        df.append([line.strip().lower()])
             df = pd.DataFrame(df, columns=['snp']).drop_duplicates()
             len_input_snps += len(df)
             temp_snp_df, temp_omitted_snps = get_file_snp_position(df, db)

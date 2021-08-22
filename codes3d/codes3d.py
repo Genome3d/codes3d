@@ -19,7 +19,6 @@ import summary
 import eqtls
 import aFC
 
-
 def parse_tissues(user_tissues, match_tissues, eqtl_project, db):
     if eqtl_project:
         sql = '''SELECT * FROM meta_eqtls WHERE project = '{}' '''.format(
@@ -250,7 +249,7 @@ def list_tissue_tags(db):
                        ).to_string(index=False, header=None))
 
 
-def parse_intermediate_files(inter_files, output_dir, file_type):
+def parse_intermediate_files(inter_files, output_dir, file_type, multi_test=['all']):
     df = []
     for inter_file in tqdm.tqdm(
             inter_files,
@@ -260,12 +259,157 @@ def parse_intermediate_files(inter_files, output_dir, file_type):
             df.append(chunk_df)
     df = pd.concat(df).drop_duplicates()
     if file_type == 'eqtls':
-        print('  * Adjusting eQTL pvalues...')
-        df['adj_pval'] = multitest.multipletests(
-            df['pval'], method='fdr_bh')[1]
+        df = multi_test_correction(df, multi_test)
     return df
 
+def multi_test_correction(eqtl_df, multi_test):
+    print('  * Adjusting eQTL pvalues...')
+    cols = ['sid', 'pid', 'sid_chr', 'sid_pos',
+            'adj_pval', 'pval', 'b', 'b_se', 'maf', 'tissue']
+    if 'snp' == multi_test.lower():
+        adj_pval_df = []
+        for _, df in eqtl_df.groupby(['sid', 'tissue']):
+            df['adj_pval'] = correct_pvals(df['pval'])
+            adj_pval_df.append(df)
+        adj_pval_df = pd.concat(adj_pval_df)
+        return adj_pval_df[cols]
+    if 'tissue' == multi_test.lower():
+        adj_pval_df = []
+        for _, df in eqtl_df.groupby(['tissue']):
+            df['adj_pval'] = correct_pvals(df['pval'])
+            adj_pval_df.append(df)
+        adj_pval_df = pd.concat(adj_pval_df)
+        return adj_pval_df[cols]
+    else:
+        eqtl_df['adj_pval'] = correct_pvals(eqtl_df['pval'])
+        return eqtl_df[cols]
 
+def correct_pvals(pval):
+    return multitest.multipletests(pval, method='fdr_bh')[1]
+
+
+
+def map_non_spatial_eqtls(
+        snp_df,
+        tissues,
+        c,
+        args,
+        eqtl_project_db,
+        logger):
+    eqtl_df = eqtls.map_eqtls_non_spatial(
+        snp_df,
+        tissues,
+        c.eqtl_data_dir,
+        args.num_processes,
+        eqtl_project_db,
+        logger)
+    gene_df = genes.get_gene_by_gencode(
+        eqtl_df.rename(columns={'gene_id': 'gene'}),
+        commons_db)[0]
+    gene_df = pd.concat(gene_df).rename(
+        columns = {
+            'name': 'gene',
+            'chrom': 'gene_chrom',
+            'start': 'gene_start',
+            'end': 'gene_end'}).drop(
+                columns = ['id'])
+    eqtl_df = eqtl_df.merge(
+        gene_df, how = 'inner',
+        left_on = ['gene_id'], right_on = ['gencode_id']
+    ).drop(columns = ['gene_id']).drop_duplicates()
+    cols = ['snp', 'variant_id', 'gene', 'gencode_id',
+            'pval_nominal', 'slope', 'slope_se', 'pval_nominal_threshold','min_pval_nominal', 'pval_beta',
+            'tss_distance', 'maf', 'gene_chrom', 'gene_start', 'gene_end']
+    print(eqtl_df)
+    eqtl_df[cols].to_csv(os.path.join(args.output_dir, 'non_spatial_eqtls.txt'), sep='\t', index=False)
+    msg = 'Done.\nTotal time elasped: {:.2f} mins.'.format(
+        (time.time() - start_time)/60)
+    logger.write(msg)
+    
+    '''
+    TODO: Implement aFC
+    if not args.no_afc:
+        afc_start_time = time.time()
+        eqtl_df = calc_afc(
+            eqtl_df,
+            genotypes_fp,
+            expression_dir,
+            covariates_dir,
+            eqtl_project,
+            args.output_dir,
+            args.fdr_threshold,
+            args.afc_bootstrap,
+            args.num_processes)
+    '''
+    
+    sys.exit()
+
+def map_spatial_eqtls(
+        snp_list,
+        c,
+        hic_df,
+        args,
+        logger,
+        commons_db,
+        tissues,
+        eqtl_project_db,
+        covariates_dir,
+        expression_dir):
+    gene_df = []
+    eqtl_df = []
+    batchsize = 5000
+    snp_batches = [
+        snp_list[i:i + batchsize] for i in range(0, len(snp_list),
+                                                 batchsize)]
+    for batch_num, snp_batch in enumerate(snp_batches):
+        #batch_output_dir = args.output_dir
+        if len(snp_batches) > 1:
+            logger.write('SNP batch {} of {}'.format(
+                batch_num+1, len(snp_batches)))
+            #batch_output_dir = os.path.join(
+            #    args.output_dir, str(batch_num))
+            #os.makedirs(batch_output_dir, exist_ok=True)
+        batch_snp_df = snp_df[snp_df['snp'].isin(snp_batch)]
+        batch_interactions_df = interactions.find_interactions(
+            batch_snp_df,
+            'snp',
+            c.lib_dir,
+            hic_df,
+            # batch_output_dir,
+            args.num_processes,
+            logger)
+        batch_gene_df = genes.get_gene_by_id(
+            batch_snp_df,
+            batch_interactions_df,
+            commons_db,
+            logger)
+        gene_df.append(batch_gene_df)
+        if batch_gene_df.empty:
+            continue
+        batch_eqtl_df = eqtls.map_eqtls(
+            batch_gene_df,
+            tissues,
+            args.num_processes,
+            eqtl_project_db,
+            covariates_dir,
+            expression_dir,
+            args.pval_threshold,
+            args.maf_threshold,
+            args.fdr_threshold,
+            logger)
+        eqtl_df.append(batch_eqtl_df)
+    gene_df = pd.concat(gene_df)
+    eqtl_df = pd.concat(eqtl_df)
+    if gene_df.empty or snp_df.empty or eqtl_df.empty:
+        logger.write('''No eQTLs found.Cleaning up genes.txt and eqtls.txt.
+        \nProgram exiting.''')
+        sys.exit()
+    if not args.suppress_intermediate_files:
+        gene_df.to_csv(os.path.join(
+            args.output_dir, 'genes.txt'), sep='\t', index=False)
+        
+    return gene_df, eqtl_df
+    
 class Logger(object):
     def __init__(self, logfile=None, verbose=True):
         """
@@ -305,20 +449,20 @@ class CODES3D:
             os.path.dirname(__file__), config.get("Defaults", "GENE_DATABASE_FP"))
         self.eqtl_data_dir = os.path.join(
             os.path.dirname(__file__), config.get("Defaults", "EQTL_DATA_DIR"))
-        self.maf_dir = os.path.join(
-            os.path.dirname(__file__), config.get("Defaults", "MAF_DIR"))
-        self.expression_table_fp = os.path.join(
-            os.path.dirname(__file__), config.get("Defaults", "EXPRESSION_TABLE_FP"))
-        self.snp_dict_fp = os.path.join(
-            os.path.dirname(__file__), config.get("Defaults", "SNP_DICT_FP"))
-        self.genotypes_fp = os.path.join(
-            os.path.dirname(__file__), config.get("Defaults", "GENOTYPES_FP"))
-        self.covariates_dir = os.path.join(
-            os.path.dirname(__file__), config.get("Defaults", "COVARIATES_DIR"))
-        self.expression_dir = os.path.join(
-            os.path.dirname(__file__), config.get("Defaults", "EXPRESSION_DIR"))
-        self.wgs_dir = os.path.join(
-            os.path.dirname(__file__), config.get("Defaults", "WGS_DIR"))
+        #self.maf_dir = os.path.join(
+        #    os.path.dirname(__file__), config.get("Defaults", "MAF_DIR"))
+        #self.expression_table_fp = os.path.join(
+        #    os.path.dirname(__file__), config.get("Defaults", "EXPRESSION_TABLE_FP"))
+        #self.snp_dict_fp = os.path.join(
+        #    os.path.dirname(__file__), config.get("Defaults", "SNP_DICT_FP"))
+        #self.genotypes_fp = os.path.join(
+        #    os.path.dirname(__file__), config.get("Defaults", "GENOTYPES_FP"))
+        #self.covariates_dir = os.path.join(
+        #    os.path.dirname(__file__), config.get("Defaults", "COVARIATES_DIR"))
+        #self.expression_dir = os.path.join(
+        #    os.path.dirname(__file__), config.get("Defaults", "EXPRESSION_DIR"))
+        #self.wgs_dir = os.path.join(
+        #    os.path.dirname(__file__), config.get("Defaults", "WGS_DIR"))
         self.rs_merge_arch_fp = os.path.join(
             os.path.dirname(__file__), config.get("Defaults", "RS_MERGE_ARCH"))
         self.host = config.get("postgresql", "host")
@@ -353,6 +497,12 @@ def parse_args():
     parser.add_argument(
         '-o', '--output-dir',
         help='The directory in which to output results.')
+    parser.add_argument(
+        '--multi-test', default = 'multi',
+        help='''Options for BH multiple-testing: ['snp', 'tissue', 'multi'].
+        'snp': corrects for genes associated with a given SNP in a given tissue.
+        'tissue': corrects for all associations in a given tissue.
+        'multi': corrects for all associations across all tissues tested.''')
     parser.add_argument(
         '--pval-threshold', default=1,
         help='Maximum p value for mapping eQTLs. Default: 1.')
@@ -447,8 +597,12 @@ def parse_args():
          files. These can be used to run the pipeline from
          an intermediate stage in the event of interruption
          (default: False).''')
-    return parser.parse_args()
+    parser.add_argument(
+        '--non-spatial', action='store_true', default=False,
+        help='Map non-spatial eQTLs.')
 
+    return parser.parse_args()
+    
 
 if __name__ == '__main__':
     args = parse_args()
@@ -586,62 +740,37 @@ if __name__ == '__main__':
             snp_df.to_csv(os.path.join(
                 args.output_dir, 'snps.txt'), sep='\t', index=False)
         snp_list = snp_df['snp'].drop_duplicates().tolist()
-        batchsize = 1000
-        snp_batches = [
-            snp_list[i:i + batchsize] for i in range(0, len(snp_list),
-                                                     batchsize)]
-        for batch_num, snp_batch in enumerate(snp_batches):
-            #batch_output_dir = args.output_dir
-            if len(snp_batches) > 1:
-                logger.write('SNP batch {} of {}'.format(
-                    batch_num+1, len(snp_batches)))
-                #batch_output_dir = os.path.join(
-                #    args.output_dir, str(batch_num))
-                #os.makedirs(batch_output_dir, exist_ok=True)
-            batch_snp_df = snp_df[snp_df['snp'].isin(snp_batch)]
-            batch_interactions_df = interactions.find_interactions(
-                batch_snp_df,
-                'snp',
-                c.lib_dir,
-                hic_df,
-                # batch_output_dir,
-                args.num_processes,
-                logger)
-            batch_gene_df = genes.get_gene_by_id(
-                batch_snp_df,
-                batch_interactions_df,
-                commons_db,
-                logger)
-            gene_df.append(batch_gene_df)
-            if batch_gene_df.empty:
-                continue
-            batch_eqtl_df = eqtls.map_eqtls(
-                batch_gene_df,
+        if args.non_spatial:
+            map_non_spatial_eqtls(
+                snp_df,
                 tissues,
-                args.num_processes,
+                c,
+                args,
+                eqtl_project_db,
+                logger)
+        else:
+            gene_df, eqtl_df = map_spatial_eqtls(
+                snp_list,
+                c,
+                hic_df,
+                args,
+                logger,
+                commons_db,
+                tissues,
                 eqtl_project_db,
                 covariates_dir,
-                expression_dir,
-                args.pval_threshold,
-                args.maf_threshold,
-                args.fdr_threshold,
-                logger)
-            eqtl_df.append(batch_eqtl_df)
-        gene_df = pd.concat(gene_df)
-        eqtl_df = pd.concat(eqtl_df)
-        if gene_df.empty or snp_df.empty or eqtl_df.empty:
-            logger.write('''No eQTLs found.Cleaning up genes.txt and eqtls.txt.
-            \nProgram exiting.''')
-            sys.exit()
-        if not args.suppress_intermediate_files:
-            gene_df.to_csv(os.path.join(
-                args.output_dir, 'genes.txt'), sep='\t', index=False)
-    eqtl_df['adj_pval'] = multitest.multipletests(
-        eqtl_df['pval'], method='fdr_bh')[1]
+                expression_dir)
+    eqtl_df = multi_test_correction(eqtl_df, args.multi_test)
+    logger.write('  * {} eQTL associations passed FDR <= {}.'.format(
+        len(eqtl_df[eqtl_df['adj_pval'] <= args.fdr_threshold]),
+        args.fdr_threshold))
+    logger.write('  * eQTLs mapped at MAF >= {} and pval threshold <={}.'.format(
+        args.maf_threshold, args.pval_threshold))
     if not args.suppress_intermediate_files:
         eqtl_df.to_csv(os.path.join(
             args.output_dir, 'eqtls.txt'), sep='\t', index=False)
     eqtl_df = eqtl_df[eqtl_df['adj_pval'] <= args.fdr_threshold]
+
     if not args.do_not_produce_summary:
         if not args.no_afc:
             afc_start_time = time.time()

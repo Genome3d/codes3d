@@ -9,6 +9,7 @@ import sys
 import argparse
 import configparser
 import multiprocessing
+from more_itertools import sliced
 
 import codes3d
 
@@ -177,6 +178,12 @@ if __name__ == '__main__':
         '-o', '--output_dir', default='codes3d_summary',
         help='The directory in which to output results ')
     parser.add_argument(
+        '--multi-test', default = 'all',
+        help='''Options for BH multiple-testing: ['snp', 'tissue', 'multi'].
+        'snp': corrects for genes associated with a given SNP in a given tissue.
+        'tissue': corrects for all associations in a given tissue. 
+        'multi': corrects for all associations across all tissues tested.''')
+    parser.add_argument(
         '-f', '--fdr_threshold', type=float, default=0.05,
         help='''The FDR threshold to consider an eQTL statistically
         significant (default: 0.05).''')
@@ -254,7 +261,7 @@ if __name__ == '__main__':
     gene_df = codes3d.parse_intermediate_files(
         gene_files, args.output_dir, 'genes')
     eqtl_df = codes3d.parse_intermediate_files(
-        eqtl_files, args.output_dir, 'eqtls')
+        eqtl_files, args.output_dir, 'eqtls', args.multi_test)
     if eqtl_df.empty or snp_df.empty or gene_df.empty:
         sys.exit('Missing eqtls.txt, or snps.txt or genes.txt files.')
     if not os.path.isdir(args.output_dir):
@@ -270,13 +277,19 @@ if __name__ == '__main__':
             args.output_dir, 'genes.txt'), sep='\t', index=False)
         eqtl_df.to_csv(os.path.join(
             args.output_dir, 'eqtls.txt'), sep='\t', index=False)
+    eqtl_df = eqtl_df[eqtl_df['adj_pval'] <= args.fdr_threshold].sort_values(by=['sid']).reset_index(drop=True)
     if not args.no_afc:
-        eqtl_df = codes3d.calc_afc(
-            eqtl_df, genotypes_fp, expression_dir, covariates_dir,
-            eqtl_project, args.output_dir, args.fdr_threshold, args.afc_bootstrap,
-            args.num_processes)
-    else:
-        eqtl_df = eqtl_df[eqtl_df['adj_pval'] <= args.fdr_threshold]
+        chunk_size = 1000
+        index_slices = sliced(range(len(eqtl_df)), chunk_size)
+        afc_df = []
+        for index_slice in index_slices:
+            afc_df.append(
+                codes3d.calc_afc(
+                    eqtl_df.iloc[index_slice], genotypes_fp, expression_dir, covariates_dir,
+                    eqtl_project, args.output_dir, args.fdr_threshold, args.afc_bootstrap,
+                    args.num_processes)
+                )
+        eqtl_df = pd.concat(afc_df)
     produce_summary(
         eqtl_df, snp_df, gene_df, expression_table_fp,
         args.fdr_threshold, args.output_dir,
