@@ -105,6 +105,25 @@ def migrate_to_postgres(fp, postgres_url):
         logger.write('Time elapsed: {} mins.\n'.foramt(
             (time.time()-start_time)/60))
 
+def chunk_list(it, size):
+    for i in range(0, len(it), size):
+        yield it[i:i+size]
+        
+def calc_chunksize(loci, distance):
+    if len(loci) == 1:
+        return 1
+    diff = abs(max(loci) - min(loci))
+    while diff > distance:
+        chunks = [chunk for chunk in chunk_list(loci, int((len(loci)/2)+1))]
+        if(len(chunks)==1):
+            return(diff)
+        if abs(max(chunks[0])-min(chunks[0])) > abs(max(chunks[1])-min(chunks[1])):
+            loci = sorted(chunks[0])
+        else:
+            loci = sorted(chunks[1])
+        diff = abs(max(loci)-min(loci))
+    return diff
+
 def map_tissue_eqtls_non_spatial(
         tissue,
         snp_df,
