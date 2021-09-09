@@ -538,8 +538,21 @@ def process_snp_input(inputs, output_dir, db,
         snp_df = pd.concat(snp_df).drop_duplicates()
     return snp_df, len_input_snps, _omitted_snps, merged_snps
 
+def get_snps_within_gene(gene, db):
+    sql = '''SELECT id, rsid, chrom, locus, variant_id FROM variants 
+    WHERE chrom = '{}' AND locus >='{}' AND locus <='{}' '''
+    with db.connect() as con:
+        df = pd.read_sql_query(
+            sql.format(
+                gene.loc[0, 'chrom'],
+                gene.loc[0, 'start'],
+                gene.loc[0, 'end']),
+            con=con)
+        return df['rsid'].drop_duplicates().tolist()
 
+    
 def get_snp(inputs,
+            gene_in,
             hic_df,
             output_dir,
             db,
@@ -567,6 +580,8 @@ def get_snp(inputs,
     logger.write('Processing SNP input...')
     start_time = time.time()
     restriction_enzymes = hic_df['enzyme'].drop_duplicates().tolist()
+    if not gene_in.empty:
+        inputs = get_snps_within_gene(gene_in, db)
     snp_df, len_input_snps, omitted_snps, merged_snps = process_snp_input(
         inputs, output_dir, db, rs_merge_arch_fp,  logger)
     if snp_df.empty:
