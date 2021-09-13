@@ -16,6 +16,7 @@ def build_hic_tables(cell_line, enzyme, fp, db_auth, mapq_cutoff, tblspace):
     elif db_auth.startswith('sqlite://'):
         dir_name = os.path.dirname(fp)
         base_name = os.path.basename(fp).replace('-', '_')
+        base_name = base_name[:base_name.rfind('.txt.gz')]
         url = os.path.join(dir_name, base_name + '.db')
         db_url = f'{db_auth}/{url}'
     db = create_engine(db_url, echo=False)

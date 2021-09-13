@@ -5,7 +5,7 @@
 Clone the repository using the following command:
 
 ```
-git clone https://github.com/Genome3d/codes3d-v3.0.git
+https://github.com/Genome3d/codes3d.git
 cd codes3d/
 ```
 
