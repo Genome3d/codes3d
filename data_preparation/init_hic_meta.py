@@ -7,7 +7,10 @@ from sqlalchemy import create_engine
 
 
 if __name__=='__main__':
-    """Create table for meta info on Hi-C libraries."""
+    """Create table for meta info on Hi-C libraries.
+    To be run after placing Hi-C libraries in 
+    '../lib/hic/<Enzyme>/hic_data/<Cell line>/<Replicate>.db'
+    """
     hic_fp = os.path.join(os.path.dirname(__file__), '../lib/hic')
     enzyme_dict = []
     for enzyme in os.listdir(hic_fp):
@@ -20,7 +23,7 @@ if __name__=='__main__':
         enzyme_dict, columns=['replicate', 'enzyme', 'library'])
     libraries = replicates.groupby(
         ['library', 'enzyme']).size().reset_index(name='rep_count')
-    from_file = pd.read_csv('/mnt/projects/codes3d/lib/meta_hic.txt', sep='\t')
+    from_file = pd.read_csv('/mnt/projects/codes3d/lib/meta_info/meta_hic.txt', sep='\t')
     libraries = libraries.merge(
         from_file, how='left', on=['library', 'enzyme']
     ).drop_duplicates()

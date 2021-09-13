@@ -9,9 +9,15 @@ import sys
 
 
 def build_hic_tables(cell_line, enzyme, fp, db_auth, mapq_cutoff, tblspace):
-    db_url = os.path.join(db_auth, 'hic_{}_{}'.format(enzyme.lower(), cell_line.lower()))
-    if db_url.startswith('sqlite'):
-        db_url = db_url + '.db'
+    db_url = ''
+    cell_line = cell_line.replace('-', '_')
+    if db_auth.startswith('postgres'):
+        db_url = os.path.join(db_auth, 'hic_{}_{}'.format(enzyme.lower(), cell_line.lower()))
+    elif db_auth.startswith('sqlite://'):
+        dir_name = os.path.dirname(fp)
+        base_name = os.path.basename(fp).replace('-', '_')
+        url = os.path.join(dir_name, base_name + '.db')
+        db_url = f'{db_auth}/{url}'
     db = create_engine(db_url, echo=False)
     if not database_exists(db_url):
         create_database(db_url)
@@ -22,14 +28,14 @@ def build_hic_tables(cell_line, enzyme, fp, db_auth, mapq_cutoff, tblspace):
         print('{} database created.'.format(db_url))
     rep = os.path.basename(fp).split('.')[0]
     rep = rep[:rep.rfind('_merged')].split('_')[-1]
-    desc = '  * {} replicate {}'.format(cell_line, rep)
+    table = 'interactions'
+    desc = '  * {} repl. {}'.format(cell_line, rep)
     bar_format = ''
     t = tqdm(total=0, desc=desc, bar_format=bar_format)
     chunksize = 200000
     idx = 1
-    #db = create_engine(db_url, echo=False)
     for df in pd.read_csv(
-            fp, sep=' ', header=None,
+            fp, sep=' ', header=None, low_memory=False,
             compression='gzip', chunksize=chunksize):
         '''
         Columns are for short format described 
@@ -58,15 +64,16 @@ def build_hic_tables(cell_line, enzyme, fp, db_auth, mapq_cutoff, tblspace):
         patched_chrom = (df['chr1'].str.contains('_'))
         df = df[~patched_chrom]
         if_exists = 'replace' if t.total == 0 else 'append'
-        df.to_sql(
-            rep.lower(), con=db, if_exists=if_exists, index=False)
+        df.to_sql(#rep.lower(),
+            table, con=db, if_exists=if_exists, index=False)
         idx += len(df)
         t.total += len(df)
         t.update(len(df))
     t.close()
+    print('    - Building index...')
     db.execute(
         '''CREATE INDEX idx_{}_{}_chr1_frag1 ON {}
-        (chr1, frag1)'''.format(cell_line, rep.lower(), rep.lower()))
+        (chr1, frag1)'''.format(cell_line, rep.lower(), table))
 
 
 
@@ -156,10 +163,10 @@ def parse_args():
         '-m', '--mapq-cutoff', default=30,
         help='Mininum mapping quality score (mapq) of hic reads.')
     parser.add_argument(
-        "-a", "--db-auth", required=True,
+        "-a", "--db-auth", default='sqlite://', #'required=True,
         help='URL of database e.g postgresql://user:password@hostname')
     parser.add_argument(
-        "-e", "--enzyme", required=True,
+        "-e", "--enzyme", #required=True,
         help='The restriction enzyme used to prepare the Hi-C library')
     parser.add_argument(
         "-t", "--tablespace", default=None,
@@ -176,7 +183,6 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-
     print('Building...')
     for first_level in os.listdir(args.hic_dir):
         if os.path.isdir(os.path.join(args.hic_dir, first_level)):
