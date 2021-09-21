@@ -552,7 +552,7 @@ def get_snps_within_gene(gene, db):
 
     
 def get_snp(inputs,
-            gene_in,
+            gene_out,
             hic_df,
             output_dir,
             db,
@@ -580,8 +580,9 @@ def get_snp(inputs,
     logger.write('Processing SNP input...')
     start_time = time.time()
     restriction_enzymes = hic_df['enzyme'].drop_duplicates().tolist()
-    if not gene_in.empty:
-        inputs = get_snps_within_gene(gene_in, db)
+    if gene_out is not None:
+        if not gene_out.empty:
+            inputs = get_snps_within_gene(gene_out, db)
     snp_df, len_input_snps, omitted_snps, merged_snps = process_snp_input(
         inputs, output_dir, db, rs_merge_arch_fp,  logger)
     if snp_df.empty:

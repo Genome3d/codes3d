@@ -43,24 +43,24 @@ def build_hic_tables(cell_line, enzyme, fp, db_auth, mapq_cutoff, tblspace):
         https://github.com/aidenlab/juicer/wiki/Pre#medium-format-most-common
         '''
         cols = [ 
-            'readname', 'str1', 'chr1', 'pos1', 'frag1', 'str2', 'chr2',
-            'pos2', 'frag2', 'mapq1', 'mapq2']
+            'readname', 'str1', 'chr1', 'pos1', 'fragment1', 'str2', 'chr2',
+            'pos2', 'fragment2', 'mapq1', 'mapq2']
         df.columns = cols
         self_ligation = (  # Filter self-ligating fragments
             (df['chr1'] == df['chr2']) &\
-            (df['frag1'] == df['frag2']))
+            (df['fragment1'] == df['fragment2']))
         low_mapq = ( # Filter low quality reads
             (df['mapq1'] >= mapq_cutoff) & (df['mapq2'] >= mapq_cutoff))
-        db_cols = ['chr1', 'frag1', 'chr2', 'frag2']
+        db_cols = ['chr1', 'fragment1', 'chr2', 'fragment2']
         df = df[~self_ligation & low_mapq][db_cols]
         df_reverse = df.rename( # Reversing to make SQL queries faster
             columns={'chr1': 'chr2',
-                     'frag1': 'frag2',
+                     'fragment1': 'fragment2',
                      'chr2': 'chr1',
-                     'frag2': 'frag1'})
+                     'fragment2': 'fragment1'})
         df = pd.concat([
-            df.sort_values(by=['chr1', 'frag1']),
-            df_reverse.sort_values(by=['chr1', 'frag1'])])
+            df.sort_values(by=['chr1', 'fragment1']),
+            df_reverse.sort_values(by=['chr1', 'fragment1'])])
         df[['chr1', 'chr2']] = df[['chr1', 'chr2']].astype(str)
         patched_chrom = (df['chr1'].str.contains('_'))
         df = df[~patched_chrom]
@@ -73,8 +73,8 @@ def build_hic_tables(cell_line, enzyme, fp, db_auth, mapq_cutoff, tblspace):
     t.close()
     print('    - Building index...')
     db.execute(
-        '''CREATE INDEX idx_{}_{}_chr1_frag1 ON {}
-        (chr1, frag1)'''.format(cell_line, rep.lower(), table))
+        '''CREATE INDEX idx_{}_{}_chr1_fragment1 ON {}
+        (chr1, fragment1)'''.format(cell_line, rep.lower(), table))
 
 
 
