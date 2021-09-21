@@ -489,17 +489,19 @@ def parse_args():
     parser.add_argument(
         '-s', '--snp-input', nargs='+',
         help='''The dbSNP IDs or loci of SNPs of interest in the format
-         \'chr<x>:<locus>\'.''')
+         \'chr<x>:<locus>\'.\n
+        Use this flag to identify eGenes associated with the SNPs of interest.''')
     parser.add_argument(
         '-g', '--gene-input', nargs='+',
         help='''The symbols, Ensembl IDs or loci of genes interest in the format
-         \'chr<x>:<start>-<end>\'.''')
+         \'chr<x>:<start>-<end>\'.\n
+        Use this flag to identify eQTLs associated with the gene of interest.''')
     parser.add_argument(
-        '--gene-out', nargs='+',
+        '--snps-within-gene', nargs='+',
         help='''A gene symbol, Ensembl ID or location in the format
         \'chr<x>:<start>-<end>\'.\n
-        Use this flag to find genome-wide gene targets of SNPs located within 
-        the given gene.''')
+        Use this flag to identify eGenes associated with the SNPs located within 
+        the gene of interest.''')
     parser.add_argument(
         '-o', '--output-dir',
         help='The directory in which to output results.')
@@ -629,14 +631,14 @@ if __name__ == '__main__':
     if args.list_tissue_tags:
         list_tissue_tags(commons_db)
         sys.exit()
-    if not (args.snp_input or args.gene_input or args.gene_out) or not args.output_dir:
+    if not (args.snp_input or args.gene_input or args.snps_within_gene) or not args.output_dir:
         print(
             '''Missing --snp-input, --gene-input, --gene-out, or --output-dir  
             parameter(s).''')
         sys.exit('\tUse \'codes3d.py -h\' for more details.')
     if (args.snp_input and args.gene_input) or\
-       (args.snp_input and args.gene_out)or \
-       (args.gene_input and args.gene_out):
+       (args.snp_input and args.snps_within_gene)or \
+       (args.gene_input and args.snps_within_gene):
         sys.exit('''FATAL: Use only one of --snp-input, --gene-input, or --gene-out''')
     if not os.path.isdir(args.output_dir):
         os.makedirs(args.output_dir)
@@ -733,13 +735,13 @@ if __name__ == '__main__':
                 args.output_dir, 'snps.txt'), sep='\t', index=False)
             gene_df.to_csv(os.path.join(
                 args.output_dir, 'genes.txt'), sep='\t', index=False)
-    if args.snp_input or args.gene_out:
+    if args.snp_input or args.snps_within_gene:
         interactions_df = []
         gene_df = []
         gene_info_df = None
-        if args.gene_out:
+        if args.snps_within_gene:
             gene_info_df = genes.get_gene_info(
-            args.gene_out,
+            args.snps_within_gene,
             hic_df,
             args.output_dir,
             commons_db,
