@@ -93,7 +93,7 @@ def parse_hic(
         exclude_cell_line,
         restriction_enzymes,
         db):
-    """Validate user parameters -r, -n and -x.
+    ''' user parameters -r, -n and -x.
 
     Args:
         restriction_enzymes: space-delimited list of restriction enzymes from
@@ -102,7 +102,7 @@ def parse_hic(
         exclude_cell_line: space-delimited list of cell_lines from -x
     Returns:
         hic_df: a dataframe columns(library, enzyme, rep_count)
-    """
+    '''
 
     sql = '''SELECT library, tags, enzyme, rep_count FROM meta_hic'''
     df = pd.DataFrame()
@@ -449,20 +449,6 @@ class CODES3D:
             os.path.dirname(__file__), config.get("Defaults", "GENE_DATABASE_FP"))
         self.eqtl_data_dir = os.path.join(
             os.path.dirname(__file__), config.get("Defaults", "EQTL_DATA_DIR"))
-        #self.maf_dir = os.path.join(
-        #    os.path.dirname(__file__), config.get("Defaults", "MAF_DIR"))
-        #self.expression_table_fp = os.path.join(
-        #    os.path.dirname(__file__), config.get("Defaults", "EXPRESSION_TABLE_FP"))
-        #self.snp_dict_fp = os.path.join(
-        #    os.path.dirname(__file__), config.get("Defaults", "SNP_DICT_FP"))
-        #self.genotypes_fp = os.path.join(
-        #    os.path.dirname(__file__), config.get("Defaults", "GENOTYPES_FP"))
-        #self.covariates_dir = os.path.join(
-        #    os.path.dirname(__file__), config.get("Defaults", "COVARIATES_DIR"))
-        #self.expression_dir = os.path.join(
-        #    os.path.dirname(__file__), config.get("Defaults", "EXPRESSION_DIR"))
-        #self.wgs_dir = os.path.join(
-        #    os.path.dirname(__file__), config.get("Defaults", "WGS_DIR"))
         self.rs_merge_arch_fp = os.path.join(
             os.path.dirname(__file__), config.get("Defaults", "RS_MERGE_ARCH"))
         self.host = config.get("postgresql", "host")
@@ -610,12 +596,8 @@ def parse_args():
         help='Map non-spatial eQTLs.')
 
     return parser.parse_args()
-    
 
-if __name__ == '__main__':
-    args = parse_args()
-    c = CODES3D(args.config)
-    commons_db = create_engine(c.commons_db_url, echo=False, poolclass=NullPool)
+def validate_args(args, commons_db):
     if args.list_eqtl_db:
         list_eqtl_databases(commons_db)
         sys.exit()
@@ -640,25 +622,25 @@ if __name__ == '__main__':
        (args.snp_input and args.snps_within_gene)or \
        (args.gene_input and args.snps_within_gene):
         sys.exit('''FATAL: Use only one of --snp-input, --gene-input, or --gene-out''')
-    if not os.path.isdir(args.output_dir):
-        os.makedirs(args.output_dir)
-    logger = Logger(logfile=os.path.join(
-        args.output_dir, 'codes3d.log'))
-    start_time = time.time()
-    tissues = parse_tissues(
-        args.tissues, args.match_tissues, args.eqtl_project, commons_db)
-    hic_df = parse_hic(
-        args.match_tissues,
-        args.include_cell_lines,
-        args.exclude_cell_lines,
-        args.restriction_enzymes,
-        commons_db)
-    logger.write('SETTINGS')
-    logger.write('Run mode:\t{}'.format('SNP' if args.snp_input else 'Gene'))
-    logger.write('FDR threshold:\t{}'.format(args.fdr_threshold))
-    logger.write('MAF threshold:\t{}'.format(args.maf_threshold))
-    logger.write('Effect size:\t{}'.format(
-        'allelic fold change (aFC)' if not args.no_afc else 'beta (normalised)'))
+    
+def log_settings(args, logger):
+    mode = 'SNP'
+    if args.gene_input:
+        mode = 'Gene'
+    elif args.snps_within_gene:
+        mode = 'SNPs-within-gene'
+    multi_test = 'Multi-tissue'
+    if args.multi_test.lower() == 'snp':
+        multi_test = 'SNP'
+    elif args.multi_test.lower() == 'tissue':
+        multi_test = 'Tissue'
+    effect_size = 'allelic fold change (aFC)' if not args.no_afc else 'beta (normalised)'
+    logger.write('SETTINGS')        
+    logger.write(f'Run mode:\t{mode}')
+    logger.write(f'FDR correction on:\t{multi_test}')
+    logger.write(f'FDR threshold:\t{args.fdr_threshold}')
+    logger.write(f'MAF threshold:\t{args.maf_threshold}')
+    logger.write(f'Effect size:\t{effect_size}')
     if not args.match_tissues and not args.include_cell_lines and \
        not args.exclude_cell_lines:
         logger.write('Hi-C libraries:\tAll libraries in database')
@@ -679,6 +661,28 @@ if __name__ == '__main__':
             print(('Use -t and -n to include specific eQTL tissues'
                    ' and Hi-C libraries'))
             sys.exit('Exiting.')
+    
+if __name__ == '__main__':
+    args = parse_args()
+    c = CODES3D(args.config)
+    commons_db = create_engine(c.commons_db_url, echo=False, poolclass=NullPool)
+    validate_args(args, commons_db)
+    
+    if not os.path.isdir(args.output_dir):
+        os.makedirs(args.output_dir)
+    logger = Logger(logfile=os.path.join(
+        args.output_dir, 'codes3d.log'))
+    start_time = time.time()
+    tissues = parse_tissues(
+        args.tissues, args.match_tissues, args.eqtl_project, commons_db)
+    hic_df = parse_hic(
+        args.match_tissues,
+        args.include_cell_lines,
+        args.exclude_cell_lines,
+        args.restriction_enzymes,
+        commons_db)
+    log_settings(args, logger)
+
     eqtl_project = tissues['project'].tolist()[0]
     config = configparser.ConfigParser()
     config.read(args.config)
@@ -780,7 +784,7 @@ if __name__ == '__main__':
                 eqtl_project_db,
                 covariates_dir,
                 expression_dir)
-    eqtl_df = multi_test_correction(eqtl_df, args.multi_test)
+    eqtl_df = multi_test_correction(eqtl_df, args.multi_test.lower())
     logger.write('  * {} eQTL associations passed FDR <= {}.'.format(
         len(eqtl_df[eqtl_df['adj_pval'] <= args.fdr_threshold]),
         args.fdr_threshold))

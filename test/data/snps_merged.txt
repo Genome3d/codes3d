@@ -1,0 +1,3 @@
+input_rsid	merged_rsid
+rs116755193	rs34660260
+rs116755193	rs117585476
