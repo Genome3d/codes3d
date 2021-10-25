@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#!/usr/bin/env python
 
 import os
 import sys
@@ -18,6 +18,8 @@ def find_snps(
         gene_info_df,
         tissues,
         output_dir,
+        C,
+        genotypes_fp,
         _eqtl_project_db,
         covariates_dir,
         expression_dir,
@@ -60,10 +62,10 @@ def find_snps(
     logger.write('Finding SNPs within fragments interacting with genes in...')
     for chrom in sorted(chrom_list):
         chrom_dir = os.path.join(output_dir, chrom)
-        if os.path.exists(os.path.join(chrom_dir, 'eqtls.txt')):
-            logger.write('  Warning: {} already exists. Skipping.'.format(
-                os.path.join(chrom_dir, 'eqtls.txt')))
-            continue
+        #if os.path.exists(os.path.join(chrom_dir, 'eqtls.txt')):
+        #    logger.write('  Warning: {} already exists. Skipping.'.format(
+        #        os.path.join(chrom_dir, 'eqtls.txt')))
+        #    continue
         logger.write(' Chromosome {}'.format(chrom))
         snp_cols = ['snp', 'variant_id', 'chr',
                     'locus', 'id', 'fragment', 'enzyme']
@@ -120,7 +122,7 @@ def find_snps(
             snp_df, logger)
         snp_df.sort_values(by=['variant_id'], inplace=True)
         snp_list = snp_df['variant_id'].drop_duplicates().tolist()
-        batchsize = 10000
+        batchsize = 5000
         snp_batches = [snp_list[i:i + batchsize]
                        for i in range(0, len(snp_list), batchsize)]
         chrom_eqtl_df = []
@@ -134,6 +136,9 @@ def find_snps(
             eqtl_df = eqtls.map_eqtls(
                 batch_gene_df,
                 tissues,
+                output_dir,
+                C,
+                genotypes_fp,
                 num_processes,
                 eqtl_project_db,
                 covariates_dir,

@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-from tensorqtl import trans
+from tensorqtl import trans, genotypeio
 import tensorqtl
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
@@ -18,6 +18,8 @@ import statsmodels.stats.multitest as multitest
 import argparse
 import configparser
 import codes3d
+import subprocess
+
 
 sys.path.insert(
     1, os.path.join(os.path.abspath(os.path.dirname(__file__)), 'tensorqtl'))
@@ -124,23 +126,74 @@ def calc_chunksize(loci, distance):
         diff = abs(max(loci)-min(loci))
     return diff
 
-def map_tissue_eqtls_non_spatial(
+def map_tissue_cis_eqtls_gtex(
         tissue,
         snp_df,
+        gene_list,
         eqtls,
         eqtl_project,
         eqtl_data_dir):
     tissue_fp = 'GTEx_Analysis_v8_eQTL/{}.v8.signif_variant_gene_pairs.txt.gz'.format(tissue)
     eqtl_fp = os.path.join(eqtl_data_dir, eqtl_project, tissue_fp)
-    tissue_eqtl_df = pd.read_csv(eqtl_fp, sep='\t', compression='gzip')
-    eqtl_df = snp_df[['snp', 'variant_id']].drop_duplicates().merge(
-        tissue_eqtl_df, how='inner', on=['variant_id'])
+    eqtl_df = pd.read_csv(eqtl_fp, sep='\t', compression='gzip')
+    if gene_list != None:
+        eqtl_df = eqtl_df[eqtl_df['gene_id'].isin(gene_list)]
+    if not snp_df.empty:
+        eqtl_df = eqtl_df[eqtl_df['variant_id'].isin(snp_df['variant_id'])]
+    cols = ['variant_id', 'gene_id', 'tss_distance', 'ma_samples', 'ma_count',
+            'maf', 'pval_nominal', 'slope', 'slope_se', 'pval_nominal_threshold',
+            #'min_pval_nominal', 'pval_beta'
+    ]
+    eqtl_df = eqtl_df[cols]
+    eqtl_df = eqtl_df.rename(columns={
+        'gene_id': 'phenotype_id',
+        'pval_nominal': 'pval',
+        'slope': 'b',
+        'slope_se': 'b_se'})
+    eqtl_df['tissue'] = tissue
     eqtls.append(eqtl_df)
 
-    
+def map_cis_eqtls_gtex(
+        snp_df,
+        gene_list,
+        tissues,
+        eqtl_data_dir,
+        num_processes,
+        eqtl_project_db,
+        logger
+):
+    tissue_list = tissues['name'].drop_duplicates().tolist()
+    eqtl_project = tissues['project'].iloc[0]
+    manager = multiprocessing.Manager()
+    eqtls = manager.list()
+    desc = '  * Mapping eQTLs'
+    bar_format = '{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} {unit}'
+    disable = not logger.verbose
+    with multiprocessing.Pool(num_processes) as pool:
+        for _ in tqdm.tqdm(
+                pool.istarmap(
+                    map_tissue_cis_eqtls_gtex,
+                    zip(tissue_list,
+                        repeat(snp_df),
+                        repeat(gene_list),
+                        repeat(eqtls),
+                        repeat(eqtl_project),
+                        repeat(eqtl_data_dir)
+                    )
+                ),
+                total=len(tissue_list), desc=desc, bar_format=bar_format,
+                unit='tissues', ncols=80, disable=disable):
+            pass
+    eqtl_df = pd.DataFrame()
+    if len(eqtls) > 0:
+        eqtl_df = pd.concat(eqtls)
+
+    return eqtl_df
+
+
 def map_tissue_eqtls(
         tissue,
-        pairs_df,
+        genes,
         genotype_df,
         variant_df,
         eqtls,
@@ -150,6 +203,7 @@ def map_tissue_eqtls(
         maf_threshold,
         eqtl_project
 ):
+    '''
     covariates_fp = ''
     phenotype_fp = ''
     if eqtl_project.lower() == 'gtex': # TODO rename files to be consistent.
@@ -169,6 +223,9 @@ def map_tissue_eqtls(
     if pairs_df['pid'].iloc[0] != '': # Spatial connections
         phenotype_df = phenotype_df[
             phenotype_df.index.isin(pairs_df['pid'])]
+    '''
+    phenotype_df, covariates_df = fetch_phenotypes(
+        tissue, genes, covariates_dir, expression_dir, eqtl_project)
     eqtl_df = trans.map_trans(
         genotype_df,
         phenotype_df,
@@ -182,8 +239,36 @@ def map_tissue_eqtls(
     eqtls.append(eqtl_df[~((eqtl_df['variant_id'].isnull()) |
                            (eqtl_df['phenotype_id'].isnull()))])
 
+def fetch_phenotypes(
+        tissue,
+        gene_list,
+        covariates_dir,
+        expression_dir,
+        eqtl_project
+):
+    covariates_fp = ''
+    phenotype_fp = ''
+    if eqtl_project.lower() == 'gtex': # TODO rename files to be consistent.
+        covariates_fp = os.path.join(
+            covariates_dir, tissue + '.v8.covariates.txt')
+        phenotype_fp = os.path.join(
+            expression_dir, tissue + '.v8.normalized_expression.bed.gz')
+    else:
+        covariates_fp = os.path.join(
+            covariates_dir, tissue + '.covariates.txt')
+        phenotype_fp = os.path.join(
+            expression_dir, tissue + '.normalized_expression.bed.gz')
+    if not (os.path.exists(covariates_fp) and os.path.exists(phenotype_fp)):
+        return
+    covariates_df = pd.read_csv(covariates_fp, sep='\t', index_col=0).T
+    phenotype_df, pos_df = tensorqtl.read_phenotype_bed(phenotype_fp)
+    if len(gene_list) > 0:
+        phenotype_df = phenotype_df[
+            phenotype_df.index.isin(gene_list)]
 
-def fetch_genotypes(db, snp):
+    return phenotype_df, covariates_df
+
+def fetch_genotypes_db(db, snp):
     db.dispose()
     df = pd.DataFrame()
     with db.connect() as con:
@@ -195,11 +280,42 @@ def fetch_genotypes(db, snp):
     else:
         return pd.DataFrame({'snp': [snp]}, columns=df.columns).iloc[0]
 
+def fetch_genotypes(snps, geno, plink_prefix, C):
+    print('  * Loading genotypes')
+    snp_ref = pd.read_csv(f'{geno}.bim', sep='\t', engine='c', memory_map=True, compression=None,
+                          usecols=[1], names = ['snp'], header=None)
+    snp_list = snp_ref[snp_ref['snp'].isin(set(snps))]['snp'].tolist()
+    filtering = time.time()
+
+    cmd = f'''{C.plink} \
+    --bfile {geno} \
+    --snps {' ,'.join(snp_list)} \
+    --out {plink_prefix} \
+    --make-bed \
+    --silent
+    '''
+    filter_snps = subprocess.run(cmd, shell=True, check=True)
+    if filter_snps.returncode != 0:
+        sys.exit(f'Could not fetch SNPs.')
+    pr = genotypeio.PlinkReader(plink_prefix, verbose=False)
+    genotype_df = pr.load_genotypes()
+    variant_df = pr.bim.set_index('snp')[['chrom', 'pos']]
+    plink = time.time()
+
+    return genotype_df, variant_df
+
+def clean_plink_files(plink_prefix):
+    #print('  * Cleaning up plink files.')
+    subprocess.run(f'rm {plink_prefix}.*', shell=True, check=True)
+
 
     
 def map_eqtls(
         gene_df,
         tissues,
+        output_dir,
+        C,
+        genotypes_fp,
         num_processes,
         db,
         covariates_dir,
@@ -217,26 +333,36 @@ def map_eqtls(
         ['variant_id', 'gencode_id', 'chrom', 'locus']
     ].drop_duplicates()
     pairs_df.columns = ['sid', 'pid', 'sid_chr', 'sid_pos']
+    '''
     variant_df = pairs_df[['sid', 'sid_chr', 'sid_pos']].drop_duplicates()
     variant_df = variant_df.rename(columns={
         'sid': 'snp',
         'sid_chr': 'chrom',
         'sid_pos': 'pos'})
     '''
+    
+    '''
     for idx, row in variant_df.iterrows():
         fetch_genotypes(db, row['snp'])
         sys.exit()
     '''
+    geno = genotypes_fp[:genotypes_fp.rfind('.vcf.gz')]
+    plink_prefix = os.path.join(output_dir, 'genotypes')
+    variant_list = gene_df['variant_id'].drop_duplicates().tolist()
+    genotype_df, variant_df = fetch_genotypes(variant_list, geno, plink_prefix, C)
+    gene_list = gene_df['gencode_id'].drop_duplicates().tolist()
+    '''
     desc = '  * Loading genotypes'
     bar_format = '{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} {unit}'
     tqdm.tqdm.pandas(desc=desc, bar_format=bar_format, unit='SNPs', ncols=80)
-    genotype_df = variant_df.snp.progress_apply(lambda snp: fetch_genotypes(db, snp))
+    genotype_df = variant_df.snp.progress_apply(lambda snp: fetch_genotypes_db(db, snp))
     variant_df = variant_df.set_index('snp').sort_index(axis=0)
     if genotype_df.empty:
         logger.write('Variants were not found in database.')
         return
     genotype_df.set_index('snp', inplace=True)
     genotype_df.columns.name = 'iid'
+    '''
     manager = multiprocessing.Manager()
     eqtls = manager.list()
     desc = '  * Mapping eQTLs'
@@ -247,7 +373,7 @@ def map_eqtls(
                     pool.istarmap(
                         map_tissue_eqtls,
                         zip(tissues,
-                            repeat(pairs_df),
+                            repeat(gene_list),
                             repeat(genotype_df),
                             repeat(variant_df),
                             repeat(eqtls),
@@ -258,18 +384,18 @@ def map_eqtls(
                             repeat(eqtl_project))
                     ),
                     total=len(tissues), desc=desc, bar_format=bar_format,
-                    unit='tissues', ncols=80):
+                    unit='tissues', ncols=80, disable=logger.verbose):
                 pass
     else:
         batch_size = 20000
-        pairs_batches = [pairs_df[i:i+batch_size]
-                         for i in range(0, len(pairs_df), batch_size)]        
+        batches = [gene_list[i:i+batch_size]
+                         for i in range(0, len(gene_list), batch_size)]        
         with multiprocessing.Pool(num_processes) as pool:
             for _ in tqdm.tqdm(
                     pool.istarmap(
                         map_tissue_eqtls,
                         zip(repeat(tissues[0]),
-                            pairs_batches,
+                            batches,
                             repeat(genotype_df),
                             repeat(variant_df),
                             repeat(eqtls),
@@ -279,9 +405,10 @@ def map_eqtls(
                             repeat(maf_threshold),
                             repeat(eqtl_project))
                     ),
-                    total=len(pairs_batches), desc=desc, bar_format=bar_format,
+                    total=len(batches), desc=desc, bar_format=bar_format,
                     unit='batches', ncols=80):
                 pass
+    
     eqtl_df = pd.DataFrame()
     if len(eqtls) > 0:
         eqtl_df = pd.concat(eqtls)
@@ -302,22 +429,33 @@ def map_eqtls(
     eqtl_df = eqtl_df.drop_duplicates()    
     cols = ['sid', 'pid', 'sid_chr', 'sid_pos',
             'pval', 'b', 'b_se', 'maf', 'tissue']
-
+    clean_plink_files(plink_prefix)
+    #print('  Time elasped: {:.2f}'.format((time.time() - start_time)/60))
     return eqtl_df[cols]    
 
-
+    
 def map_eqtls_non_spatial(
         snp_df,
+        gene_list,
         tissues,
-        eqtl_data_dir,
+        output_dir,
+        maf_threshold,
+        C,
         num_processes,
+        genotypes_fp,
         db,
+        covariates_dir,
+        expression_dir,
         logger
 ):
     start_time = time.time()
     logger.write("Identifying eQTLs...")
     eqtl_project = tissues['project'].tolist()[0]
+    geno = genotypes_fp[:genotypes_fp.rfind('.vcf.gz')]
+    plink_prefix = os.path.join(output_dir, 'genotypes')
+    genotype_df, variant_df = fetch_genotypes(snp_df['variant_id'], geno, plink_prefix, C)
     tissues = tissues['name']
+    pval_threshold = 1
     manager = multiprocessing.Manager()
     eqtls = manager.list()
     desc = '  * Mapping eQTLs'
@@ -325,12 +463,17 @@ def map_eqtls_non_spatial(
     with multiprocessing.Pool(num_processes) as pool:
         for _ in tqdm.tqdm(
                 pool.istarmap(
-                    map_tissue_eqtls_non_spatial,
+                    map_tissue_eqtls,
                     zip(tissues,
-                        repeat(snp_df),
+                        repeat(gene_list),
+                        repeat(genotype_df),
+                        repeat(variant_df),
                         repeat(eqtls),
-                        repeat(eqtl_project),
-                        repeat(eqtl_data_dir))
+                        repeat(covariates_dir),
+                        repeat(expression_dir),
+                        repeat(pval_threshold),
+                        repeat(maf_threshold),
+                        repeat(eqtl_project))
                 ),
                 total=len(tissues), desc=desc, bar_format=bar_format,
                 unit='tissues', ncols=80):
@@ -340,6 +483,7 @@ def map_eqtls_non_spatial(
         eqtl_df = pd.concat(eqtls)
     if eqtl_df.empty:
         return eqtl_df
+    clean_plink_files(plink_prefix)
     logger.write('  * {} eQTL associations identified.'.format(
         len(eqtl_df)))
     logger.write('  Time elasped: {:.2f} mins.'.format(

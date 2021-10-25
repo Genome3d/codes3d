@@ -303,15 +303,17 @@ def get_gene_info(
                         df.append([line.strip()])
             df = pd.DataFrame(df, columns=['gene'])
             if len(df) > 1:
-                sys.exit(
-                    'Exiting: CoDeS3D currently supports only one gene input')
+                #sys.exit(
+                #    'Exiting: CoDeS3D currently supports only one gene input')
+                pass
             temp_gene_df, temp_omitted_genes = get_file_gene_info(df, db)
             gene_df += temp_gene_df
             omitted_genes += temp_omitted_genes
         else:
             if len(gene_inputs) >= 1:
-                sys.exit(
-                    'Exiting: CoDeS3D currently supports only one gene input')
+                #sys.exit(
+                #    'Exiting: CoDeS3D currently supports only one gene input')
+                pass
             gene_inputs.append(inp)
             if inp.startswith('chr') and ':' in inp:
                 df = pd.DataFrame([inp], columns=['gene'])
