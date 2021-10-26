@@ -821,7 +821,12 @@ if __name__ == '__main__':
         args.exclude_cell_lines,
         args.restriction_enzymes,
         commons_db)
-    if args.match_tissues:
+    if args.match_tissues and not args.non_spatial:
+        logger.write('Hi-C libraries:\t{}'.format(
+            ', '.join(hic_df['library'].tolist())))
+        logger.write('\neQTL tissues:\t{}\n'.format(
+            ', '.join(tissues['name'].tolist())))
+        
         upsert = input(
             '''WARNING: We've tried to match your Hi-C and eQTL tissues above.
             Continue? [y/N]'''
