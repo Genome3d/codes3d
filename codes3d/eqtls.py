@@ -218,6 +218,7 @@ def map_tissue_eqtls(
             expression_dir, tissue + '.normalized_expression.bed.gz')
     if not (os.path.exists(covariates_fp) and os.path.exists(phenotype_fp)):
         return
+
     covariates_df = pd.read_csv(covariates_fp, sep='\t', index_col=0).T
     phenotype_df, pos_df = tensorqtl.read_phenotype_bed(phenotype_fp)
     if pairs_df['pid'].iloc[0] != '': # Spatial connections
@@ -284,12 +285,13 @@ def fetch_genotypes(snps, geno, plink_prefix, C):
     print('  * Loading genotypes')
     snp_ref = pd.read_csv(f'{geno}.bim', sep='\t', engine='c', memory_map=True, compression=None,
                           usecols=[1], names = ['snp'], header=None)
-    snp_list = snp_ref[snp_ref['snp'].isin(set(snps))]['snp'].tolist()
+    snp_list = (snp_ref[snp_ref['snp'].isin(set(snps))]
+                .sort_values(by=['snp'])
+    )['snp'].drop_duplicates().tolist()
     filtering = time.time()
-
     cmd = f'''{C.plink} \
     --bfile {geno} \
-    --snps {' ,'.join(snp_list)} \
+    --snps {', '.join(snp_list)} \
     --out {plink_prefix} \
     --make-bed \
     --silent
@@ -389,7 +391,7 @@ def map_eqtls(
     else:
         batch_size = 20000
         batches = [gene_list[i:i+batch_size]
-                         for i in range(0, len(gene_list), batch_size)]        
+                         for i in range(0, len(gene_list), batch_size)]
         with multiprocessing.Pool(num_processes) as pool:
             for _ in tqdm.tqdm(
                     pool.istarmap(

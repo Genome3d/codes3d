@@ -27,8 +27,6 @@ def create_genotype_table(genotype_df, db_url):
               for i in range(0, len(genotype_df), chunksize)]
     db = create_engine(db_url, echo=False)
     for df in chunks:
-        print(df['snp'])
-        sys.exit()
         if_exists = 'replace' if t.total == 0 else 'append'
         df.to_sql(table, con=db, if_exists=if_exists)
         t.total += len(df)
@@ -55,7 +53,7 @@ if __name__ == '__main__':
         extensions''')
     parser.add_argument(
         '-u', '--db-url', required=True,
-        help='URL of database')
+        help='URL of database e.g postgresql://user:password@hostname/database')
     args = parser.parse_args()
     start_time = time.time()
     genotype_df = read_genotype(args.plink_prefix)

@@ -87,22 +87,23 @@ if __name__ == '__main__':
         help='The filepath to the variant lookup file')
     parser.add_argument(
         '-g', '--genes',
-        help=('The filepath to a sorted gene reference file containing ',
-              'id, chrom, start, end, name, and gencode_id columns.',
-              'Note that the id indicates the sorting (chrom, start) ',
-              'order of the file starting at 1.'))
+        help='''The filepath to a sorted gene reference file containing
+              'id, chrom, start, end, name, and gencode_id columns'.
+              Note that the id indicates the sorting (chrom, start)
+              order of the file starting at 1.''')
     parser.add_argument(
-        "-t", "--table",
+        '-t', '--table',
         help='Name of table e.g. variant_lookup_mboi.')
     parser.add_argument(
-        "-u", "--db-url", required=True,
-        help='URL of database e.g posgresql://user:password@hostname/database')
+        '-u', '--db-url', required=True,
+        help='''URL of database e.g postgresql://user:password@hostname/database
+        This is usually codes3d_commons''')
     parser.add_argument(
-        "-c", "--config",
+        '-c', '--config',
         default=os.path.join(os.path.dirname(__file__),
-                             "../docs/codes3d.conf"),
-        help="The configuration file to be used for this " +
-        "run (default: codes3d.conf)")
+                             '../docs/codes3d.conf'),
+        help='''The configuration file to be used for this
+        run (default: codes3d.conf)''')
 
     args = parser.parse_args()
     c = codes3d.CODES3D(args.config)

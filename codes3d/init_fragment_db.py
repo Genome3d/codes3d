@@ -115,29 +115,29 @@ if __name__ == '__main__':
         description="Create s PostgreSQL table of variant or gene fragment IDs.")
     parser.add_argument(
         '-f', '--fragments', required=True,
-        help='The filepath to the fragment BED file')
+        help='The filepath to the fragment BED file with chrom, start, end, fragment ID.')
     parser.add_argument(
         '-v', '--variants',
-        help=('The filepath to the variant BED file. Must contain chr, ',
-              'variant_pos, and variant_id columns'))
+        help='''The filepath to the variant lookup file. Must contain chr,
+        variant_pos, and variant_id columns''')
     parser.add_argument(
         '-g', '--genes',
-        help=('The filepath to a sorted gene reference file containing ',
-              'id, chrom, start, end, name, and gencode_id columns.',
-              'Note that the id indicates the sorting (chrom, start) ',
-              'order of the file starting at 1.'))
+        help='''The filepath to a sorted gene reference file containing 
+        id, chrom, start, end, name, and gencode_id columns.
+        Note that the id indicates the sorting (chrom, start) 
+        order of the file starting at 1.''')
     parser.add_argument(
-        "-t", "--table",
+        '-t', '--table',
         help='Name of table e.g. variant_lookup_mboi.')
     parser.add_argument(
-        "-u", "--db-url", required=True,
-        help='URL of database e.g posgresql://user:password@hostname/database')
+        '-u', '--db-url', required=True,
+        help='URL of database e.g postgresql://user:password@hostname/database')
     parser.add_argument(
-        "-c", "--config",
+        '-c', '--config',
         default=os.path.join(os.path.dirname(__file__),
-                             "../docs/codes3d.conf"),
-        help="The configuration file to be used for this " +
-        "run (default: codes3d.conf)")
+                             '../docs/codes3d.conf'),
+        help='''The configuration file to be used for this  
+        run (default: codes3d.conf)''')
 
     parser.add_argument(
         '-o', '--output', required=True,

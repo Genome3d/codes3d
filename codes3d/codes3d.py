@@ -157,7 +157,7 @@ def parse_hic(
             [c.upper() for c in include_cell_line])]
     elif exclude_cell_line and len(exclude_cell_line) > 0:
         validate_input(exclude_cell_line, df['library'])
-        hic_df = df[df['library'].str.upper().isin(
+        hic_df = df[~df['library'].str.upper().isin(
             [c.upper() for c in exclude_cell_line])]
     else:
         hic_df = df
@@ -672,7 +672,7 @@ def parse_args():
     parser.add_argument(
         '-t', '--tissues', nargs='+',
         help='''Space-separated list of eQTL tissues to query.
-        Note that tissues must be from the same eQTL projects.
+        Note that tissues are case-sensitive and must be from the same eQTL projects.
         Default is all tissues from the GTEx project.
         Use 'codes3d.py --list-eqtl-tissues' for a list of installed tissues.''')
     parser.add_argument(

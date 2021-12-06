@@ -122,7 +122,7 @@ def find_snps(
             snp_df, logger)
         snp_df.sort_values(by=['variant_id'], inplace=True)
         snp_list = snp_df['variant_id'].drop_duplicates().tolist()
-        batchsize = 5000
+        batchsize = 2000
         snp_batches = [snp_list[i:i + batchsize]
                        for i in range(0, len(snp_list), batchsize)]
         chrom_eqtl_df = []

@@ -100,6 +100,7 @@ def produce_summary(
         return
     logger.write("  * Collecting gene expression rates...")
     exp_df = pd.read_table(expression_table_fp, skiprows=2, engine='c')
+
     # Modify columns in GTEx v8 gene expression table to match tissue names
     new_columns = []
     for column in exp_df.columns:

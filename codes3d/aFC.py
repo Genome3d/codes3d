@@ -148,7 +148,6 @@ def main(
                 desc=desc, unit='tissues', ncols=80,
                 bar_format=bar_format):
             pass
-
     df = []
     for fp in os.listdir(output_dir):
         if fp.endswith('aFC.txt'):
@@ -184,7 +183,6 @@ def calculate_tissue_aFC(tissue, qtl, eqtl_project):
         pheno = os.path.join(expression_dir, tissue +
                              '.normalized_expression.bed.gz')
         cov = os.path.join(covariates_dir, tissue + '.covariates.txt')
-
     output = os.path.join(output_dir, tissue + '.aFC.txt')
 
     # get sample - column map from VCF
@@ -206,7 +204,7 @@ def calculate_tissue_aFC(tissue, qtl, eqtl_project):
     else:
         df_cov = pd.DataFrame(columns=['ID'])
         cov_id_col = "ID"
-
+    df_cov[cov_id_col] = df_cov[cov_id_col].str.split('_').str[0]
     # 2 get sample - column map from phenotype file
     #print("2. Loading phenotype data...")
     pheno_map = sample_column_map(pheno, line_key="#", start_col=4)
