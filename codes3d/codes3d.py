@@ -479,7 +479,7 @@ def map_spatial_eqtls(
         expression_dir):
     gene_df = []
     eqtl_df = []
-    batchsize = 5000
+    batchsize = 2000
     snp_batches = [
         snp_list[i:i + batchsize] for i in range(0, len(snp_list),
                                                  batchsize)]

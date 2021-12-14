@@ -369,6 +369,19 @@ def map_eqtls(
     eqtls = manager.list()
     desc = '  * Mapping eQTLs'
     bar_format = '{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} {unit}'
+    '''
+    for tissue in tissues:
+        map_tissue_eqtls(tissue,
+                         gene_list,
+                         genotype_df,
+                         variant_df,
+                         eqtls,
+                         covariates_dir,
+                         expression_dir,
+                         pval_threshold,
+                         maf_threshold,
+                         eqtl_project)
+    '''
     if len(tissues) > 1:
         with multiprocessing.Pool(num_processes) as pool:
             for _ in tqdm.tqdm(
@@ -410,7 +423,6 @@ def map_eqtls(
                     total=len(batches), desc=desc, bar_format=bar_format,
                     unit='batches', ncols=80):
                 pass
-    
     eqtl_df = pd.DataFrame()
     if len(eqtls) > 0:
         eqtl_df = pd.concat(eqtls)

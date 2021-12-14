@@ -14,7 +14,7 @@ def istarmap(self, func, iterable, chunksize=1):
                 chunksize))
 
     task_batches = mpp.Pool._get_tasks(func, iterable, chunksize)
-    result = mpp.IMapIterator(self._cache)
+    result = mpp.IMapIterator(self)
     self._taskqueue.put(
         (
             self._guarded_task_generation(result._job,
