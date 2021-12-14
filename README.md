@@ -23,30 +23,18 @@ pip3 install --upgrade pip virtualenv setuptools
 #### Create environment with conda
 Ensure that you have [conda](https://docs.conda.io/en/latest/) installed. Then create a conda environment from the root directory. In this example, the environment is created in the envs directory and has all the required dependencies. (Size of environment ~1.8GB.)
 ```
-conda env create --prefix ./envs/codes3d_env -f envs/codes3d.yaml
+conda env create --prefix ./codes3d_env --file environment.yaml
 ```
 
 Then activate the environment with
 ```
-conda activate envs/codes3d_env/
+conda activate codes3d_env/
 ```
 To deactivate,
 ```
 conda deactivate
 ```
 
-#### Create environment with pip
-Alternatively, you can install the dependencies using pip. (Size of environment ~2,1GB.)
-```
-python3 -m venv venv # create virtual environment
-source venv/bin/activate # activate environment
-python3 -m pip install -r /docs/requirements.txt
-```
-
-To deactivate the CoDeS3D environment,
-```
-deactivate
-```
 
 #### Data installation
 You will also need to install Hi-C libraries and data necessary to calculate eQTLs. You can find detailed instructions and helper scripts in the `download_data` directory's [README](download_data/README.md) file.
