@@ -106,9 +106,9 @@ def build_fragment_index(fragment_fp, output_db):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description=(
-            'Digest a genome with a restriction enzyme. ',
-            'Creates a BED file where the fourth column denotes the restriction',
-            ' fragment number of the fragment specified'))
+            """Digest a genome with a restriction enzyme, and create
+            a BED file where the fourth column denotes the restriction 
+            fragment number of the fragment specified"""))
     parser.add_argument(
         "-g", "--genome",
         help="Genome in genbank or fasta format.")
@@ -117,21 +117,20 @@ if __name__ == '__main__':
         help="Is the genome linear? (default: False)")
     parser.add_argument(
         "-e", "--enzyme", nargs='+',
-        help=("The restriction enzyme with which to fragment the genome, ",
-              "for example, `-e MspI`"))
+        help="""The restriction enzyme with which to digest the fragment 
+        for example, `-e MspI`""")
     parser.add_argument(
         "-o", "--output_dir",
-        help=("Output directory for fragment BED and database files. ",
-              "(default: the directory of input genome.)"))
+        help="""Output directory for fragment BED and database 
+        (default: the directory of input genome.""")
     parser.add_argument(
         "-b", "--do_not_index", action="store_true",
-        help=("Suppress building of fragment index from resultant ",
-              "fragmented genome."))
+        help="""Suppress building of fragment index from the fragmented genome.""")
     parser.add_argument(
         "-d", "--output_db",
-        help=("Output file path for fragment BED file and database ",
-              "(default: the name of the input file, with the extension ",
-              "\".db\"/\".bed\", respectively.)"))
+        help="""Output file path for fragment BED file and database
+        (default: the name of the input file, with the extension,
+        "\".db\"/\".bed\", respectively.)""")
     parser.add_argument(
         "-z", "--list_enzymes",
         help="List the available enzymes for digestion.", action="store_true")

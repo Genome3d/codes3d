@@ -438,7 +438,7 @@ def map_non_spatial_eqtls(
             'pval', 'b', 'b_se', 
             'snp_chrom', 'snp_locus', 'maf',
             'gene_chrom', 'gene_start', 'gene_end']
-    eqtl_df = eqtl_df[cols].drop_duplicates()
+    eqtl_df = eqtl_df[cols].dropna().drop_duplicates()
     eqtl_project = tissues['project'].iloc[0]
     if not args.no_afc:
         afc_start_time = time.time()
@@ -446,6 +446,9 @@ def map_non_spatial_eqtls(
         eqtl_df['sid_chr'] = eqtl_df['snp_chrom']
         eqtl_df['sid_pos'] = eqtl_df['snp_locus']
         eqtl_df['pid'] = eqtl_df['gencode_id']
+        fp = os.path.join(args.output_dir, 'eqtls.txt') 
+        eqtl_df.to_csv(fp, sep='\t', index=False)
+        print(eqtl_df)
         eqtl_df = calc_afc(
             eqtl_df,
             genotypes_fp,

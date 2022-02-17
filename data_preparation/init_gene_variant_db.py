@@ -82,20 +82,20 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Build database tables gene and variant fragments')
     parser.add_argument(
-        '-v', '--variants',
+        "-v", "--variants",
         help='The filepath to the variant lookup file')
     parser.add_argument(
-        '-g', '--genes',
-        help=('The filepath to a sorted gene reference file containing ',
-              'id, chrom, start, end, name, and gencode_id columns.',
-              'Note that the id indicates the sorting (chrom, start) ',
-              'order of the file starting at 1.'))
+        "-g", "--genes",
+        help="""The filepath to a sorted gene reference file containing
+        id, chrom, start, end, name, and gencode_id columns.
+        Note that the id indicates the sorting (chrom, start) 
+        order of the file starting at 1.""")
     parser.add_argument(
         "-t", "--table",
-        help='Name of table e.g. variant_lookup_mboi.')
+        help="Name of table e.g. variant_lookup_mboi.")
     parser.add_argument(
         "-u", "--db-url", required=True,
-        help='URL of database e.g posgresql://user:password@hostname/database')
+        help="URL of database e.g posgresql://user:password@hostname/database")
     parser.add_argument(
         "-c", "--config",
         default=os.path.join(os.path.dirname(__file__),

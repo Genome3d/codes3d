@@ -29,5 +29,5 @@ if __name__=='__main__':
     ).drop_duplicates()
 
     db = create_engine(
-        'postgres://codes3d:codes3d@127.0.0.1/codes3d_commons', echo=False)
+        'postgresql://codes3d:codes3d@127.0.0.1/codes3d_commons', echo=False)
     libraries.drop_duplicates().to_sql('meta_hic', con=db, if_exists='replace')
