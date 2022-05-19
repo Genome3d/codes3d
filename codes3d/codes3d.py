@@ -82,8 +82,8 @@ def parse_tissues(user_tissues, match_tissues, eqtl_project, db):
             print(user_df[['name', 'project']].to_string(index=False))
             sys.exit()
         tissues = user_df[['name', 'project']]
-    else:  # Use GTEx database as default
-        tissues = df[df['project'] == 'GTEx'][[
+    else:  # Pull all tissues in eQTL project
+        tissues = df[df['project'] == eqtl_project][[
             'name', 'project']]
     return tissues
 
@@ -261,8 +261,8 @@ def parse_intermediate_files(inter_files, output_dir, file_type, multi_test=['al
         for chunk_df in pd.read_csv(inter_file, sep='\t', chunksize=1000000):
             df.append(chunk_df)
     df = pd.concat(df).drop_duplicates()
-    if file_type == 'eqtls':
-        df = multi_test_correction(df, multi_test)
+    #if file_type == 'eqtls':
+    #    df = multi_test_correction(df, multi_test)
     return df
 
 def multi_test_correction(eqtl_df, multi_test):
@@ -840,7 +840,6 @@ if __name__ == '__main__':
             sys.exit('Exiting.')
 
     log_settings(args, logger)
-
     eqtl_project = tissues['project'].tolist()[0]
     config = configparser.ConfigParser()
     config.read(args.config)
