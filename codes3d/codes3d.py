@@ -747,7 +747,7 @@ def log_settings(args, logger):
     if args.gene_input:
         logger.write(f'--gene-input:\t{", ".join(args.gene_input)}')
     if args.snps_within_gene:
-        logger.write(f'--snps-within-gebe:\t{args.snps_within_gene}')
+        logger.write(f'--snps-within-gene:\t{args.snps_within_gene}')
     logger.write('\n')
 
 

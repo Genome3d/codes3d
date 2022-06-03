@@ -207,7 +207,7 @@ def get_gene_by_id(
 def get_gene_by_position(df, db):
     gene_df = []
     omitted_genes = []
-    sql = '''SELECT * FROM genes where chrom = '{}' and start= {} and "end" = {};'''
+    sql = '''SELECT * FROM genes where chrom = '{}' and start >= {} and "end" <= {};'''
     with db.connect() as con:
         for idx, row in df.iterrows():
             try:
