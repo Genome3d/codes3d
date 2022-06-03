@@ -289,61 +289,6 @@ def multi_test_correction(eqtl_df, multi_test):
 
 def correct_pvals(pval):
     return multitest.multipletests(pval, method='fdr_bh')[1]
-
-
-def map_gtex_cis_eqtls(
-        snp_df,
-        tissues,
-        C,
-        args,
-        eqtl_project_db,
-        logger):
-    eqtl_df = eqtls.map_eqtls_non_spatial(
-        snp_df,
-        tissues,
-        C.eqtl_data_dir,
-        args.num_processes,
-        eqtl_project_db,
-        logger)
-    gene_df = genes.get_gene_by_gencode(
-        eqtl_df.rename(columns={'gene_id': 'gene'}),
-        commons_db)[0]
-    gene_df = pd.concat(gene_df).rename(
-        columns = {
-            'name': 'gene',
-            'chrom': 'gene_chrom',
-            'start': 'gene_start',
-            'end': 'gene_end'}).drop(
-                columns = ['id'])
-    eqtl_df = eqtl_df.merge(
-        gene_df, how = 'inner',
-        left_on = ['gene_id'], right_on = ['gencode_id']
-    ).drop(columns = ['gene_id']).drop_duplicates()
-    cols = ['snp', 'variant_id', 'gene', 'gencode_id',
-            'pval_nominal', 'slope', 'slope_se', 'pval_nominal_threshold','min_pval_nominal', 'pval_beta',
-            'tss_distance', 'maf', 'gene_chrom', 'gene_start', 'gene_end']
-
-    if not args.no_afc:
-        afc_start_time = time.time()
-        eqtl_df = calc_afc(
-            eqtl_df,
-            genotypes_fp,
-            expression_dir,
-            covariates_dir,
-            eqtl_project,
-            args.output_dir,
-            args.fdr_threshold,
-            args.afc_bootstrap,
-            args.num_processes)
-
-    print(eqtl_df)
-    eqtl_df[cols].to_csv(os.path.join(args.output_dir, 'non_spatial_eqtls.txt'), sep='\t', index=False)
-    msg = 'Done.\nTotal time elasped: {:.2f} mins.'.format(
-        (time.time() - start_time)/60)
-    logger.write(msg)
-    
-    
-    sys.exit()
     
     
 def map_non_spatial_eqtls(
@@ -407,7 +352,7 @@ def map_non_spatial_eqtls(
             logger)
     if gene_info_df is None:
         gene_info_df = genes.get_gene_by_gencode(
-            eqtl_df.rename(columns={'gene_id': 'gene'}),
+            eqtl_df.rename(columns={'phenotype_id': 'gene'}),
             commons_db)[0]
         gene_info_df = pd.concat(gene_info_df).rename(
             columns = {
@@ -441,6 +386,8 @@ def map_non_spatial_eqtls(
     eqtl_df = eqtl_df[cols].dropna().drop_duplicates()
     eqtl_project = tissues['project'].iloc[0]
     if not args.no_afc:
+        logger.write('Skipping aFC calculation. First find a way to decide significant eQTL associations.')
+        '''
         afc_start_time = time.time()
         eqtl_df['sid'] = eqtl_df['variant_id']
         eqtl_df['sid_chr'] = eqtl_df['snp_chrom']
@@ -448,7 +395,6 @@ def map_non_spatial_eqtls(
         eqtl_df['pid'] = eqtl_df['gencode_id']
         fp = os.path.join(args.output_dir, 'eqtls.txt') 
         eqtl_df.to_csv(fp, sep='\t', index=False)
-        print(eqtl_df)
         eqtl_df = calc_afc(
             eqtl_df,
             genotypes_fp,
@@ -460,6 +406,7 @@ def map_non_spatial_eqtls(
             args.afc_bootstrap,
             args.num_processes)
         cols += ['log2_aFC', 'log2_aFC_lower', 'log2_aFC_upper']
+        '''
     fp = os.path.join(args.output_dir, 'non_spatial_eqtls.txt') 
     eqtl_df[cols].to_csv(fp, sep='\t', index=False)
     logger.write(f'Output written to {fp}')
