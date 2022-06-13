@@ -263,8 +263,6 @@ def fetch_phenotypes(
         return
     covariates_df = pd.read_csv(covariates_fp, sep='\t', index_col=0).T
     phenotype_df, pos_df = tensorqtl.read_phenotype_bed(phenotype_fp)
-    if gene_list is None:
-        gene_list = []
     if len(gene_list) > 0:
         phenotype_df = phenotype_df[
             phenotype_df.index.isin(gene_list)]
@@ -290,17 +288,15 @@ def fetch_genotypes(snps, geno, plink_prefix, C):
     snp_list = (snp_ref[snp_ref['snp'].isin(set(snps))]
                 .sort_values(by=['snp'])
     )['snp'].drop_duplicates().tolist()
+    
     filtering = time.time()
-    plink = C.plink
-    if os.path.dirname(plink) == '':
-        plink = f'./{plink}'
-    cmd = f'''{plink} \
+    cmd = f'''./{C.plink} \
     --bfile {geno} \
     --snps {', '.join(snp_list)} \
     --out {plink_prefix} \
     --make-bed \
     --silent
-    '''
+    ''' # make plink executable
     filter_snps = subprocess.run(cmd, shell=True, check=True)
     if filter_snps.returncode != 0:
         sys.exit(f'Could not fetch SNPs.')

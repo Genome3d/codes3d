@@ -15,7 +15,7 @@ import codes3d
 
 
 def produce_summary(
-        exp, eqtl_df, snp_df, gene_df,
+        pchic, eqtl_df, snp_df, gene_df,
         expression_table_fp, fdr_threshold, output_dir, num_processes,
         output_format, no_afc, logger):
     """Write final results of eQTL-eGene associations
@@ -43,7 +43,7 @@ def produce_summary(
     eqtl_df['sid_chr'] = eqtl_df['sid_chr'].str[3:]
     gene_df['pid'] = gene_df['gencode_id'].str.split('.', expand=True)[0]
     cols = []
-    if exp == 'hic':
+    if not pchic:
         logger.write("  * Computing Hi-C data...")
         df = gene_df[['snp', 'gencode_id', 'cell_line', 'interactions',
                   'replicates', 'cell_line_replicates']].merge(
@@ -106,19 +106,19 @@ def produce_summary(
                          'b': 'beta',
                          'b_se': 'beta_se'})
 
-    if not no_afc and exp == 'hic':
+    if not no_afc and not pchic:
         cols = ['snp', 'gencode_id', 'gene', 'tissue', 'adj_pval',
                 'log2_aFC', 'log2_aFC_lower', 'log2_aFC_upper', 'maf',
                 'interaction_type', 'hic_score']
-    elif no_afc and exp == 'hic':
+    elif no_afc and not pchic:
         cols = ['snp', 'gencode_id', 'gene', 'tissue', 'adj_pval',
                 'beta', 'beta_se', 'maf', 'interaction_type', 'hic_score']
 
-    elif not no_afc and exp == 'pchic':
+    elif not no_afc and pchic:
         cols = ['snp', 'gencode_id', 'gene', 'tissue', 'adj_pval',
                 'log2_aFC', 'log2_aFC_lower', 'log2_aFC_upper', 'maf',
                 'interaction_type']
-    elif no_afc and exp == 'pchic':
+    elif no_afc and pchic:
         cols = ['snp', 'gencode_id', 'gene', 'tissue', 'adj_pval',
                 'beta', 'beta_se', 'maf', 'interaction_type']
 
@@ -169,13 +169,13 @@ def produce_summary(
     }
     extremes_df = pd.DataFrame(extremes_df)
 
-    if exp == 'hic':
+    if not pchic:
         eqtl_df = eqtl_df.merge(
             extremes_df.reset_index(), left_on=['gencode_id'], right_on=['Name'])
         cols += ['cell_lines', 'cell_line_hic_scores', 'expression',
                 'max_expressed_tissue', 'max_expression',
                 'min_expressed_tissue', 'min_expression']
-    elif exp == 'pchic':
+    elif pchic:
         eqtl_df = eqtl_df.merge(
             extremes_df.reset_index(), left_on=['gencode_id'], right_on=['Name'])
         cols += ['cell_lines', 'N_reads_per_cell_line', 'chicago_scores', 'expression',

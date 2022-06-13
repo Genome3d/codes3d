@@ -170,9 +170,9 @@ def find_snp_genes_pchic(
             right_on='frag_id')
     enzyme_genes.append(chunk_df)
 
-def fetch_3dgi_libs(spatial, db):
+def fetch_3dgi_libs(db, pchic=False):
     with db.connect() as con:
-        if spatial == 'pchic':
+        if pchic:
             _3dgi_libs = pd.read_sql_query(
                     'SELECT library, enzyme, rep_count FROM meta_pchic', con=con)
         else:
@@ -183,12 +183,11 @@ def fetch_3dgi_libs(spatial, db):
 
 
 def get_gene_by_id(
-        spatial,
         snp_df,
         inter_df,
         _db,
         logger,
-):
+        pchic=False):
     logger.write('Identifying genes interacting with SNPs in...')
     global db
     db = _db
@@ -196,7 +195,7 @@ def get_gene_by_id(
     enzymes = inter_df['enzyme'].drop_duplicates().tolist()
     all_genes_df = []
     #db = create_engine(db_url, echo=False, poolclass=NullPool)
-    _3dgi_libs = fetch_3dgi_libs(spatial, db)
+    _3dgi_libs = fetch_3dgi_libs(db, pchic)
     _3dgi_libs = _3dgi_libs.rename(columns={'rep_count': 'cell_line_replicates'})
     for enzyme in enzymes:
         manager = multiprocessing.Manager()
@@ -280,18 +279,18 @@ def get_gene_by_id(
 
 
 def get_gene_by_fid(
-        spatial,
         snp_df,
         inter_df,
         _db,
-        logger):
+        logger,
+        pchic=True):
     logger.write('Identifying gene promoters interacting with SNPs in...')
     global db
     db = _db
     start_time = time.time()
     enzymes = inter_df['enzyme'].drop_duplicates().tolist()
     all_genes_df = []
-    _3dgi_libs = fetch_3dgi_libs(spatial, db)
+    _3dgi_libs = fetch_3dgi_libs(db, pchic)
     _3dgi_libs = _3dgi_libs.rename(columns={'rep_count': 'cell_line_replicates'})
     for enzyme in enzymes:
         manager = multiprocessing.Manager()
@@ -431,18 +430,14 @@ def get_file_gene_info(df, db):
 
 
 def get_gene_info(
-        spatial,
         inputs,
-        pchic_df,
         hic_df,
         output_dir,
         db,
         logger,
+        pchic = None,
         suppress_intermediate_files=False):
-    if spatial == 'hic':
-        enzymes = hic_df['enzyme'].drop_duplicates().tolist()
-    else:
-        enzymes = pchic_df['enzyme'].drop_duplicates().tolist()
+    enzymes = hic_df['enzyme'].drop_duplicates().tolist()
     gene_df = []
     omitted_genes = []
     gene_inputs = []
@@ -493,11 +488,12 @@ def get_gene_info(
             len(omitted_genes))
         msg = msg + ':\n\t{}'.format(', '.join(omitted_genes))
         logger.write(msg)
-    if spatial == 'hic':
-        gene_df = get_gene_fragments_hic(gene_df, enzymes, db)
-        gene_df = gene_df.rename(columns={'frag_id': 'fragment'})
-    else:
+    if pchic:
         gene_df = get_gene_fragments_pchic(gene_df, enzymes, db)
         gene_df = gene_df.rename(columns={'frag_id': 'fragment'})
         gene_df = gene_df.drop(['chr','gene'], axis=1)
+    else:
+        gene_df = get_gene_fragments_hic(gene_df, enzymes, db)
+        gene_df = gene_df.rename(columns={'frag_id': 'fragment'})
+    
     return(gene_df)

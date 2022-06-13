@@ -13,8 +13,7 @@ import genes
 import eqtls
 
 
-def find_snps_hic(
-        spatial,
+def find_snps(
         inter_df,
         gene_info_df,
         tissues,
@@ -30,6 +29,7 @@ def find_snps_hic(
         num_processes,
         _db,
         logger,
+        pchic=False,
         suppress_intermediate_files=False
 ):
     start_time = time.time()
@@ -38,17 +38,27 @@ def find_snps_hic(
     global db
     db = _db
     enzymes = inter_df['enzyme'].drop_duplicates().tolist()
-    _3dgi_libs = genes.fetch_3dgi_libs(spatial, db)
+    _3dgi_libs = genes.fetch_3dgi_libs(db, pchic)
     _3dgi_libs = _3dgi_libs.rename(columns={'rep_count': 'cell_line_replicates'})
     inter_df = inter_df.merge(
             _3dgi_libs, how='left',
             left_on=['cell_line', 'enzyme'], right_on=['library', 'enzyme'])
-    default_chrom = ['chr' + str(i)
-                     for i in list(range(1, 23))] + ['X', 'Y', 'M']
-    chrom_list = inter_df['fragment_chr'].drop_duplicates().tolist()
-    chrom_list = [i for i in default_chrom if i in chrom_list]
-    inter_df = inter_df[inter_df['fragment_chr'].isin(default_chrom)]
-    inter_df = inter_df.astype({'fragment': int})
+    if pchic:
+        inter_df = inter_df[['p_fid','oe_fid','n_reads','score',
+            'query_type', 'query_fragment', 'replicate', 'cell_line', 'enzyme',
+            'library']]
+        inter_df['inter_frag'] = np.where(inter_df['query_fragment'] ==
+            inter_df['p_fid'], inter_df['oe_fid'], inter_df['p_fid'])
+        inter_df = inter_df[['n_reads','score','query_type','query_fragment','inter_frag',
+        'replicate','cell_line','enzyme']].drop_duplicates()
+    else:
+        default_chrom = ['chr' + str(i)
+                        for i in list(range(1, 23))] + ['X', 'Y', 'M']
+        chrom_list = inter_df['fragment_chr'].drop_duplicates().tolist()
+        chrom_list = [i for i in default_chrom if i in chrom_list]
+        inter_df = inter_df[inter_df['fragment_chr'].isin(default_chrom)]
+        inter_df = inter_df.astype({'fragment': int})
+
     gene_info_df = gene_info_df.rename(
         columns={
             'name': 'gene',
@@ -60,262 +70,207 @@ def find_snps_hic(
     all_snps = []
     all_genes = []
     all_eqtls = []
-    logger.write('Finding SNPs within fragments interacting with genes in...')
-    for chrom in sorted(chrom_list):
-        chrom_dir = os.path.join(output_dir, chrom)
-        #if os.path.exists(os.path.join(chrom_dir, 'eqtls.txt')):
-        #    logger.write('  Warning: {} already exists. Skipping.'.format(
-        #        os.path.join(chrom_dir, 'eqtls.txt')))
-        #    continue
-        logger.write(' Chromosome {}'.format(chrom))
-        snp_cols = ['snp', 'variant_id', 'chr',
-                    'locus', 'id', 'fragment', 'enzyme']
-        chrom_df = inter_df[inter_df['fragment_chr'] == chrom]
-        chrom_df = chrom_df.astype({'fragment': int,
-                                    'fragment_chr': object})
-        enzymes = chrom_df['enzyme'].drop_duplicates().tolist()
+    
+    if pchic:
+        logger.write('Finding SNPs within fragments interacting with gene promoters in...')
+    else:
+        logger.write('Finding SNPs within fragments interacting with genes in...')
+    
+    if pchic:
         snp_df = []
         for enzyme in enzymes:
-            enzyme_df = chrom_df[chrom_df['enzyme'] == enzyme]
+            enzyme_dir = os.path.join(output_dir, enzyme)
+            enzyme_df = inter_df[inter_df['enzyme'] == enzyme]
             enzyme_df = enzyme_df.merge(
-                gene_info_df, how='inner',
-                left_on=['query_chr', 'query_fragment', 'enzyme'],
-                right_on=['chrom', 'gene_fragment', 'enzyme'])
+                    gene_info_df, how='inner',
+                    left_on = ['query_fragment', 'enzyme'],
+                    right_on = ['gene_fragment', 'enzyme'])
             fragment_df = enzyme_df[
-                ['gencode_id', 'fragment_chr', 'fragment']].drop_duplicates()
-            enzyme_df = enzyme_df.sort_values(by=['fragment'])
+                    ['gencode_id','query_fragment','inter_frag','project']].drop_duplicates()
+            enzyme_df = enzyme_df.drop(columns=['project']).drop_duplicates()
+            enzyme_df = enzyme_df.sort_values(by=['inter_frag'])
             chunksize = 20000
             enzyme_chunks = [enzyme_df[i:i+chunksize]
-                             for i in range(0, enzyme_df.shape[0], chunksize)]
+                    for i in range(0, enzyme_df.shape[0], chunksize)]
             manager = multiprocessing.Manager()
             snps = manager.list()
-            desc = '  * Hi-C libraries restricted with {}'.format(
-                enzyme)
+            desc = '  * PCHi-C libraries restricted with {}'.format(enzyme)
             bar_format = '{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} {unit}'
-            '''
-            for df in tqdm.tqdm(enzyme_chunks, desc=desc, unit='batches',
-                                ncols=80, bar_format=bar_format):
-                find_gene_snps(
-                    df,
-                    enzyme,
-                    snps)
-            '''
             with multiprocessing.Pool(processes=4) as pool:
                 for _ in tqdm.tqdm(
                         pool.istarmap(
                             find_gene_snps,
                             zip(enzyme_chunks,
-                                repeat(spatial),
                                 repeat(enzyme),
-                                repeat(snps))
-                        ),
+                                repeat(snps),
+                                repeat(pchic))
+                            ),
                         total=len(enzyme_chunks), desc=desc, unit='batches',
                         ncols=80, bar_format=bar_format):
                     pass
-
-            for df in snps:
-                df['enzyme'] = enzyme
-                snp_df.append(df)
-        if len(snp_df) == 0:
-            continue
-        snp_df = pd.concat(snp_df)
-        logger.verbose = False
-        gene_df, snp_df = filter_snp_fragments_hic(
-            snp_df, logger)
-        snp_df.sort_values(by=['variant_id'], inplace=True)
-        snp_list = snp_df['variant_id'].drop_duplicates().tolist()
-        batchsize = 2000
-        snp_batches = [snp_list[i:i + batchsize]
-                       for i in range(0, len(snp_list), batchsize)]
-        chrom_eqtl_df = []
-        for batch_num, snp_batch in enumerate(snp_batches):
-            if len(snp_batches) > 1:
-                logger.verbose = True
-                logger.write('  Mapping eQTLs batch {} of {}'.format(
-                    batch_num+1, len(snp_batches)))
-                logger.verbose = False
-            batch_gene_df = gene_df[gene_df['variant_id'].isin(snp_batch)]
-            eqtl_df = eqtls.map_eqtls(
-                batch_gene_df,
-                tissues,
-                output_dir,
-                C,
-                genotypes_fp,
-                num_processes,
-                eqtl_project_db,
-                covariates_dir,
-                expression_dir,
-                pval_threshold,
-                maf_threshold,
-                fdr_threshold,
-                logger)
-            if eqtl_df is None:
-                continue
-            chrom_eqtl_df.append(eqtl_df)
-        if len(chrom_eqtl_df) > 0:
-            chrom_eqtl_df = pd.concat(chrom_eqtl_df)
-        else:
-            chrom_eqtl_df = pd.DataFrame()
-        if not suppress_intermediate_files:
-            os.makedirs(chrom_dir, exist_ok=True)
-            snp_df.to_csv(os.path.join(chrom_dir, 'snps.txt'),
-                          sep='\t', index=False)
-            gene_df.to_csv(os.path.join(chrom_dir, 'genes.txt'),
-                           sep='\t', index=False)
-            chrom_eqtl_df.to_csv(os.path.join(chrom_dir, 'eqtls.txt'),
-                                 sep='\t', index=False)
-        all_eqtls.append(chrom_eqtl_df)
-        all_snps.append(snp_df)
-        all_genes.append(gene_df)
-        logger.verbose = True
-    if len(all_eqtls) == 0:
-        snp_df = pd.DataFrame()
-        gene_df = pd.DataFrame()
-        eqtl_df = pd.DataFrame()
-    else:
-        snp_df = pd.concat(all_snps)
-        gene_df = pd.concat(all_genes)
-        eqtl_df = pd.concat(all_eqtls)
-    logger.verbose = True
-    logger.write('  Time elasped: {:.2f} mins.'.format(
-        (time.time() - start_time)/60))
-    return snp_df, gene_df, eqtl_df
-
-def find_snps_pchic(
-        spatial,
-        inter_df,
-        gene_info_df,
-        tissues,
-        output_dir,
-        C,
-        genotypes_fp,
-        _eqtl_project_db,
-        covariates_dir,
-        expression_dir,
-        pval_threshold,
-        maf_threshold,
-        fdr_threshold,
-        num_processes,
-        _db,
-        logger,
-        suppress_intermediate_files=False):
-    start_time = time.time()
-    global eqtl_project_db
-    eqtl_project_db = _eqtl_project_db
-    global db
-    db = _db
-    enzymes = inter_df['enzyme'].drop_duplicates().tolist()
-    _3dgi_libs = genes.fetch_3dgi_libs(spatial, db)
-    _3dgi_libs = _3dgi_libs.rename(columns={'rep_count': 'cell_line_replicates'})
-    inter_df = inter_df.merge(
-            _3dgi_libs, how='left',
-            left_on=['cell_line', 'enzyme'], right_on=['library', 'enzyme'])
-    inter_df = inter_df[['p_fid','oe_fid','n_reads','score',
-        'query_type', 'query_fragment', 'replicate', 'cell_line', 'enzyme',
-        'library']]
-    inter_df['inter_frag'] = np.where(inter_df['query_fragment'] == 
-                                inter_df['p_fid'], inter_df['oe_fid'], inter_df['p_fid'])
-    inter_df = inter_df[['n_reads','score','query_type','query_fragment','inter_frag',
-        'replicate','cell_line','enzyme']].drop_duplicates()
-    gene_info_df = gene_info_df.rename(
-            columns={
-                'name': 'gene',
-                'chr': 'gene_chr',
-                'start': 'gene_start',
-                'end': 'gene_end',
-                'fragment': 'gene_fragment',
-                'id': 'gene_id'})
-    all_snps = []
-    all_genes = []
-    all_eqtls = []
-    logger.write('Finding SNPs within fragments interacting with gene promoters in...')
-    snp_df = []
-    for enzyme in enzymes:
-        enzyme_dir = os.path.join(output_dir, enzyme)
-        enzyme_df = inter_df[inter_df['enzyme'] == enzyme]
-        enzyme_df = enzyme_df.merge(
-                gene_info_df, how='inner',
-                left_on = ['query_fragment', 'enzyme'],
-                right_on = ['gene_fragment', 'enzyme'])
-        fragment_df = enzyme_df[
-                ['gencode_id','query_fragment','inter_frag','project']].drop_duplicates()
-        enzyme_df = enzyme_df.drop(columns=['project']).drop_duplicates()
-        enzyme_df = enzyme_df.sort_values(by=['inter_frag'])
-        chunksize = 10000
-        enzyme_chunks = [enzyme_df[i:i+chunksize]
-                for i in range(0, enzyme_df.shape[0], chunksize)]
-        manager = multiprocessing.Manager()
-        snps = manager.list()
-        desc = '  * PCHi-C libraries restricted with {}'.format(
-            enzyme)
-        bar_format = '{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} {unit}'
-        with multiprocessing.Pool(processes=4) as pool:
-            for _ in tqdm.tqdm(
-                    pool.istarmap(
-                        find_gene_snps,
-                        zip(enzyme_chunks,
-                            repeat(spatial),
-                            repeat(enzyme),
-                            repeat(snps))
-                        ),
-                    total=len(enzyme_chunks), desc=desc, unit='batches',
-                    ncols=80, bar_format=bar_format): 
-                pass
-        for df in snps:
-            df['enzyme'] = enzyme
-            snp_df.append(df)
-        if len(snp_df) == 0:
-            continue
-    snp_df = pd.concat(snp_df)
-    logger.verbose = False
-    gene_df, snp_df = filter_snp_fragments_pchic(
-            snp_df, logger)
-    snp_df.sort_values(by=['variant_id'], inplace=True)
-    snp_list = snp_df['variant_id'].drop_duplicates().tolist()
-    batchsize = 2000
-    snp_batches = [snp_list[i:i + batchsize]
-            for i in range(0, len(snp_list), batchsize)]
-    chrom_eqtl_df = []
-    for batch_num, snp_batch in enumerate(snp_batches):
-        if len(snp_batches) > 1:
-            logger.verbose = True
-            logger.write('  Mapping eQTLs batch {} of {}'.format(
-                batch_num+1, len(snp_batches)))
+                for df in snps:
+                    df['enzyme'] = enzyme
+                    snp_df.append(df)
+                if len(snp_df) == 0:
+                    continue
+            snp_df = pd.concat(snp_df)
             logger.verbose = False
-        batch_gene_df = gene_df[gene_df['variant_id'].isin(snp_batch)]
-        eqtl_df = eqtls.map_eqtls(
-                batch_gene_df,
-                tissues,
-                output_dir,
-                C,
-                genotypes_fp,
-                num_processes,
-                eqtl_project_db,
-                covariates_dir,
-                expression_dir,
-                pval_threshold,
-                maf_threshold,
-                fdr_threshold,
-                logger)
-        if eqtl_df is None:
-            continue
-        chrom_eqtl_df.append(eqtl_df)
-    if len(chrom_eqtl_df) > 0:
-        chrom_eqtl_df = pd.concat(chrom_eqtl_df)
+            gene_df, snp_df = filter_snp_fragments_pchic(
+                    snp_df, logger)
+            snp_df.sort_values(by=['variant_id'], inplace=True)
+            snp_list = snp_df['variant_id'].drop_duplicates().tolist()
+            batchsize = 2000
+            snp_batches = [snp_list[i:i + batchsize]
+                    for i in range(0, len(snp_list), batchsize)]
+            chrom_eqtl_df = []
+            for batch_num, snp_batch in enumerate(snp_batches):
+                if len(snp_batches) > 1:
+                    logger.verbose = True
+                    logger.write('  Mapping eQTLs batch {} of {}'.format(
+                        batch_num+1, len(snp_batches)))
+                    logger.verbose = False
+                batch_gene_df = gene_df[gene_df['variant_id'].isin(snp_batch)]
+                eqtl_df = eqtls.map_eqtls(
+                        batch_gene_df,
+                        tissues,
+                        output_dir,
+                        C,
+                        genotypes_fp,
+                        num_processes,
+                        eqtl_project_db,
+                        covariates_dir,
+                        expression_dir,
+                        pval_threshold,
+                        maf_threshold,
+                        fdr_threshold,
+                        logger)
+                if eqtl_df is None:
+                    continue
+                chrom_eqtl_df.append(eqtl_df)
+            if len(chrom_eqtl_df) > 0:
+                chrom_eqtl_df = pd.concat(chrom_eqtl_df)
+            else:
+                chrom_eqtl_df = pd.DataFrame()
+            if not suppress_intermediate_files:
+                os.makedirs(enzyme_dir, exist_ok=True)
+                snp_df.to_csv(os.path.join(enzyme_dir, 'snps.txt'),
+                        sep='\t', index=False)
+                gene_df.to_csv(os.path.join(enzyme_dir, 'genes.txt'),
+                        sep='\t', index=False)
+                chrom_eqtl_df.to_csv(os.path.join(enzyme_dir, 'eqtls.txt'),
+                        sep='\t', index=False)
+            all_eqtls.append(chrom_eqtl_df)
+            all_snps.append(snp_df)
+            all_genes.append(gene_df)
+            logger.verbose = True
     else:
-        chrom_eqtl_df = pd.DataFrame()
-    if not suppress_intermediate_files:
-        os.makedirs(enzyme_dir, exist_ok=True)
-        snp_df.to_csv(os.path.join(enzyme_dir, 'snps.txt'),
-                sep='\t', index=False)
-        gene_df.to_csv(os.path.join(enzyme_dir, 'genes.txt'),
-                sep='\t', index=False)
-        chrom_eqtl_df.to_csv(os.path.join(enzyme_dir, 'eqtls.txt'),
-                sep='\t', index=False)
-    all_eqtls.append(chrom_eqtl_df)
-    all_snps.append(snp_df)
-    all_genes.append(gene_df)
-    logger.verbose = True
+        for chrom in sorted(chrom_list):
+            chrom_dir = os.path.join(output_dir, chrom)
+            #if os.path.exists(os.path.join(chrom_dir, 'eqtls.txt')):
+            #    logger.write('  Warning: {} already exists. Skipping.'.format(
+            #        os.path.join(chrom_dir, 'eqtls.txt')))
+            #    continue
+            logger.write(' Chromosome {}'.format(chrom))
+            snp_cols = ['snp', 'variant_id', 'chr',
+                        'locus', 'id', 'fragment', 'enzyme']
+            chrom_df = inter_df[inter_df['fragment_chr'] == chrom]
+            chrom_df = chrom_df.astype({'fragment': int,
+                                        'fragment_chr': object})
+            enzymes = chrom_df['enzyme'].drop_duplicates().tolist()
+            snp_df = []
+            for enzyme in enzymes:
+                enzyme_df = chrom_df[chrom_df['enzyme'] == enzyme]
+                enzyme_df = enzyme_df.merge(
+                    gene_info_df, how='inner',
+                    left_on=['query_chr', 'query_fragment', 'enzyme'],
+                    right_on=['chrom', 'gene_fragment', 'enzyme'])
+                fragment_df = enzyme_df[
+                    ['gencode_id', 'fragment_chr', 'fragment']].drop_duplicates()
+                enzyme_df = enzyme_df.sort_values(by=['fragment'])
+                chunksize = 20000
+                enzyme_chunks = [enzyme_df[i:i+chunksize]
+                                 for i in range(0, enzyme_df.shape[0], chunksize)]
+                manager = multiprocessing.Manager()
+                snps = manager.list()
+                desc = '  * Hi-C libraries restricted with {}'.format(
+                    enzyme)
+                bar_format = '{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} {unit}'
+                '''
+                for df in tqdm.tqdm(enzyme_chunks, desc=desc, unit='batches',
+                                    ncols=80, bar_format=bar_format):
+                    find_gene_snps(
+                        df,
+                        enzyme,
+                        snps)
+                '''
+                with multiprocessing.Pool(processes=4) as pool:
+                    for _ in tqdm.tqdm(
+                            pool.istarmap(
+                                find_gene_snps,
+                                zip(enzyme_chunks,
+                                    repeat(enzyme),
+                                    repeat(snps),
+                                    repeat(pchic))
+                            ),
+                            total=len(enzyme_chunks), desc=desc, unit='batches',
+                            ncols=80, bar_format=bar_format):
+                        pass
+
+                for df in snps:
+                    df['enzyme'] = enzyme
+                    snp_df.append(df)
+            if len(snp_df) == 0:
+                continue
+            snp_df = pd.concat(snp_df)
+            logger.verbose = False
+            gene_df, snp_df = filter_snp_fragments_hic(
+                snp_df, logger)
+            snp_df.sort_values(by=['variant_id'], inplace=True)
+            snp_list = snp_df['variant_id'].drop_duplicates().tolist()
+            batchsize = 2000
+            snp_batches = [snp_list[i:i + batchsize]
+                           for i in range(0, len(snp_list), batchsize)]
+            chrom_eqtl_df = []
+            for batch_num, snp_batch in enumerate(snp_batches):
+                if len(snp_batches) > 1:
+                    logger.verbose = True
+                    logger.write('  Mapping eQTLs batch {} of {}'.format(
+                        batch_num+1, len(snp_batches)))
+                    logger.verbose = False
+                batch_gene_df = gene_df[gene_df['variant_id'].isin(snp_batch)]
+                eqtl_df = eqtls.map_eqtls(
+                    batch_gene_df,
+                    tissues,
+                    output_dir,
+                    C,
+                    genotypes_fp,
+                    num_processes,
+                    eqtl_project_db,
+                    covariates_dir,
+                    expression_dir,
+                    pval_threshold,
+                    maf_threshold,
+                    fdr_threshold,
+                    logger)
+                if eqtl_df is None:
+                    continue
+                chrom_eqtl_df.append(eqtl_df)
+            if len(chrom_eqtl_df) > 0:
+                chrom_eqtl_df = pd.concat(chrom_eqtl_df)
+            else:
+                chrom_eqtl_df = pd.DataFrame()
+            if not suppress_intermediate_files:
+                os.makedirs(chrom_dir, exist_ok=True)
+                snp_df.to_csv(os.path.join(chrom_dir, 'snps.txt'),
+                              sep='\t', index=False)
+                gene_df.to_csv(os.path.join(chrom_dir, 'genes.txt'),
+                               sep='\t', index=False)
+                chrom_eqtl_df.to_csv(os.path.join(chrom_dir, 'eqtls.txt'),
+                                     sep='\t', index=False)
+            all_eqtls.append(chrom_eqtl_df)
+            all_snps.append(snp_df)
+            all_genes.append(gene_df)
+            logger.verbose = True
     if len(all_eqtls) == 0:
         snp_df = pd.DataFrame()
         gene_df = pd.DataFrame()
@@ -331,24 +286,23 @@ def find_snps_pchic(
 
 def find_gene_snps(
         inter_df,
-        spatial,
         enzyme,
-        snps
-        ):
+        snps,
+        pchic):
     db.dispose()
     eqtl_project_db.dispose()
-
-    if spatial == 'hic':
-        table = 'variant_lookup_{}'
-    else:
+    
+    if pchic:
         table = 'variant_lookup_pchic_{}'
+    else:
+        table = 'variant_lookup_{}'
     
     if enzyme in ['MboI', 'DpnII']:  # MboI and DpnII have the same restriction sites
         table = table.format('mboi')
     else:
         table = table.format(enzyme.lower())
     
-    if spatial == 'hic':
+    if not pchic:
         chrom = inter_df['fragment_chr'].drop_duplicates().tolist()[0]
         sql = '''SELECT * FROM {}  WHERE chrom = '{}' AND frag_id >= {} AND frag_id <= {}'''
         df = pd.DataFrame()
@@ -366,7 +320,7 @@ def find_gene_snps(
         df['id'] = df['id'].astype('Int64')
         df = df[df['frag_id'].notnull()]
         df = df.drop_duplicates()
-        snp_df = find_snp_by_id(spatial, df, eqtl_project_db)
+        snp_df = find_snp_by_id(df, eqtl_project_db, pchic)
         if snp_df.empty:
             return
         snp_df = snp_df.merge(df, how='inner', on=['id', 'chrom'])
@@ -396,7 +350,7 @@ def find_gene_snps(
         df['id'] = df['id'].astype('Int64')
         df = df[df['frag_id'].notnull()]
         df = df.drop_duplicates()
-        snp_df = find_snp_by_id(spatial, df, eqtl_project_db)
+        snp_df = find_snp_by_id(df, eqtl_project_db, pchic)
         if snp_df.empty:
             return
         snp_df = snp_df.merge(df, how='inner', on=['id', 'chrom'])
@@ -404,9 +358,9 @@ def find_gene_snps(
         snp_df = snp_df.rename(columns={'rsid': 'snp'})
         snps.append(snp_df.drop_duplicates())
          
-def find_snp_by_id(spatial, df, db):
+def find_snp_by_id(df, db, pchic=False):
     df = df.sort_values(by=['id'])
-    if spatial == 'hic':
+    if not pchic:
         chunksize = eqtls.calc_chunksize(
             df['id'].tolist(), 2000000)
     else:
@@ -582,14 +536,14 @@ def get_snp_fragments_whole(snp_df, restriction_enzymes, db):
     return snp_df
 
 
-def get_snp_fragments(spatial, snp_df, restriction_enzymes, db):
+def get_snp_fragments(snp_df, restriction_enzymes, db, pchic=False):
     snp_df = snp_df.sort_values(by=['id'])
     fragment_df = []
     chunksize = 1000
     chunks = [snp_df[i:i+chunksize]
               for i in range(0, snp_df.shape[0], chunksize)]
     for enzyme in restriction_enzymes:
-        if spatial == 'pchic':
+        if pchic:
             table = 'variant_lookup_pchic_{}'
         else:
             table = 'variant_lookup_{}'
@@ -770,15 +724,14 @@ def get_snps_within_gene(gene, db):
         return df['rsid'].drop_duplicates().tolist()
 
     
-def get_snp(spatial,
-            inputs,
+def get_snp(inputs,
             gene_out,
             hic_df,
-            pchic_df,
             output_dir,
             db,
             rs_merge_arch_fp,
             logger,
+            pchic=False,
             suppress_intermediate_files=False
             ):
     """Retrieve SNP position and restriction fragments.
@@ -800,10 +753,7 @@ def get_snp(spatial,
     """
     logger.write('Processing SNP input...')
     start_time = time.time()
-    if spatial == 'hic':
-        restriction_enzymes = hic_df['enzyme'].drop_duplicates().tolist()
-    else:
-        restriction_enzymes = pchic_df['enzyme'].drop_duplicates().tolist()
+    restriction_enzymes = hic_df['enzyme'].drop_duplicates().tolist()
     if gene_out is not None:
         if not gene_out.empty:
             inputs = get_snps_within_gene(gene_out, db)
@@ -813,7 +763,7 @@ def get_snp(spatial,
         logger.write('We could not find your SNPs in our databases.')
         sys.exit()
     snp_df[['id', 'locus']] = snp_df[['id', 'locus']].astype(int)
-    snp_df = get_snp_fragments(spatial, snp_df, restriction_enzymes, db)
+    snp_df = get_snp_fragments(snp_df, restriction_enzymes, db, pchic)
     snp_df = snp_df.rename(columns={'rsid': 'snp', 'frag_id': 'fragment'})
     if not suppress_intermediate_files:
         if not merged_snps.empty:

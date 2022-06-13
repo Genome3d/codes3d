@@ -13,18 +13,40 @@ from itertools import repeat
 
 
 def get_cell_interactions(
-        spatial,
         enzyme,
         replicate,
         query_type,
         df,
-        interactions):
+        interactions,
+        pchic=False):
     cell_line = os.path.dirname(replicate).split('/')[-1]
     rep_interactions = []
     
     # TODO: Add implementation for PostgreSQL database
     
-    if spatial == 'hic':
+    if pchic:
+        sql = '''SELECT * from interactions WHERE p_fid={} OR oe_fid={}'''
+        with create_engine('sqlite:///{}'.format(replicate), echo=False).connect() as con:
+            for idx, row in df.iterrows():
+                from_db = pd.read_sql_query(sql.format(
+                    row['fragment'], row['fragment']), con=con)
+                if not from_db.empty:
+                    from_db_subset = from_db[['p_fid','p_name','oe_fid','oe_name',
+                        'n_reads','score']]
+                    from_db_subset['query_type'] = query_type
+                    from_db_subset['query_fragment'] = row['fragment']
+                    rep_interactions.append(from_db_subset)
+            if len(rep_interactions) == 0:
+                return
+            rep_interactions = pd.concat(rep_interactions)
+            rep_interactions = rep_interactions.drop_duplicates()
+            rep = os.path.basename(replicate).split('.')[0]
+            rep_interactions['replicate'] = rep
+            rep_interactions['cell_line'] = cell_line
+            rep_interactions['enzyme'] = enzyme
+            interactions.append(rep_interactions)
+
+    else:
         sql = '''
               SELECT chr2, fragment2 FROM interactions WHERE chr1='{}' AND fragment1={}
               '''
@@ -59,59 +81,48 @@ def get_cell_interactions(
         rep_interactions = rep_interactions[~self_ligation]
         interactions.append(rep_interactions)
 
-    else:
-        sql = '''SELECT * from interactions WHERE p_fid={} OR oe_fid={}'''
-        with create_engine('sqlite:///{}'.format(replicate), echo=False).connect() as con:
-            for idx, row in df.iterrows():
-                from_db = pd.read_sql_query(sql.format(
-                    row['fragment'], row['fragment']), con=con)
-                if not from_db.empty:
-                    from_db_subset = from_db[['p_fid','p_name','oe_fid','oe_name',
-                        'n_reads','score']]
-                    from_db_subset['query_type'] = query_type
-                    from_db_subset['query_fragment'] = row['fragment']
-                    rep_interactions.append(from_db_subset)
-        if len(rep_interactions) == 0:
-            return
-        rep_interactions = pd.concat(rep_interactions)
-        rep_interactions = rep_interactions.drop_duplicates()
-        rep = os.path.basename(replicate).split('.')[0]
-        rep_interactions['replicate'] = rep
-        rep_interactions['cell_line'] = cell_line
-        rep_interactions['enzyme'] = enzyme
-        interactions.append(rep_interactions)
-
-def filter_inter_for_pchic(interactions):
-    
+def filter_inter_for_pchic(interactions, query_type):
     pchic_interactions = []
-    for row in interactions.itertuples(index=False):
-        # remove snps that interact with unannotated oe_frag
-        if row.query_fragment == row.p_fid  and \
+    if query_type == 'snp':
+        for row in interactions.itertuples(index=False):
+            # remove snps that interact with unannotated oe_frag
+            if row.query_fragment == row.p_fid  and \
                 row.oe_name != ".":
-            #row['snp_in_promoter'] = row['query_snp']
-            pchic_interactions.append(row)
-        elif row.query_fragment == row.oe_fid and \
+                pchic_interactions.append(row)
+            elif row.query_fragment == row.oe_fid and \
                 row.oe_name != ".":
-            pchic_interactions.append(row)
-        elif row.query_fragment == row.oe_fid and \
+                pchic_interactions.append(row)
+            elif row.query_fragment == row.oe_fid and \
                 row.oe_name == ".":
-            pchic_interactions.append(row)
-        elif row.query_fragment == row.p_fid and \
+                pchic_interactions.append(row)
+            elif row.query_fragment == row.p_fid and \
                 row.oe_name == ".":
-            pass
+                pass
+    elif query_type == 'gencode_id':
+        for row in interactions.itertuples(index=False):
+            if (row.query_fragment == row.p_fid)  and \
+                row.oe_name != ".":
+                pchic_interactions.append(row)
+            elif row.query_fragment == row.oe_fid and \
+                row.oe_name != ".":
+                pchic_interactions.append(row)
+            elif row.query_fragment == row.p_fid and \
+                row.oe_name == ".":
+                pchic_interactions.append(row)
+            elif row.query_fragment == row.oe_fid and \
+                row.oe_name == ".":
+                pass
     pchic_interactions = pd.DataFrame(pchic_interactions)
-    
     return pchic_interactions
 
 def find_interactions(
-        spatial,
         fragment_df,
         query_type,
         lib_dir,
         hic_df,
-        pchic_df,
         num_processes,
         logger,
+        pchic=False,
         suppress_intermediate_files=False):
     """Finds fragments that interact with gene fragments.
     """
@@ -120,19 +131,16 @@ def find_interactions(
     restriction_enzymes = fragment_df['enzyme'].drop_duplicates().tolist()
     interactions_df = []
     for enzyme in restriction_enzymes:
-        if spatial == 'hic':
-            _3dgi_data_dir = os.path.join(lib_dir, 'hic', enzyme, 'hic_data')
-        else:
+        if pchic:
             _3dgi_data_dir = os.path.join(lib_dir, 'pchic', enzyme, 'pchic_data')
+        else:
+            _3dgi_data_dir = os.path.join(lib_dir, 'hic', enzyme, 'hic_data')
         manager = multiprocessing.Manager()
         gene_interactions = manager.list()
         enzyme_qc_df = manager.list()
         enzyme_qc_all_df = manager.list()
         num_processes = int(min(16, multiprocessing.cpu_count()/2))
-        if spatial == 'hic':
-            cell_lines = hic_df[hic_df['enzyme'] == enzyme]['library'].tolist()
-        else:
-            cell_lines = pchic_df[pchic_df['enzyme'] == enzyme]['library'].tolist()
+        cell_lines = hic_df[hic_df['enzyme'] == enzyme]['library'].tolist()
         replicates = []
         for cell_line in cell_lines:  # TODO: Replace with database
             replicates += [os.path.join(_3dgi_data_dir, cell_line, replicate)
@@ -143,7 +151,7 @@ def find_interactions(
         enzyme_df = enzyme_df[['fragment',
                                'chrom', 'enzyme']].drop_duplicates()
         with multiprocessing.Pool(num_processes) as pool:
-            if spatial == 'pchic':
+            if pchic:
                 desc = '  * PCHi-C libraries restricted with {}'.format(enzyme)
             else:
                 desc = '  * Hi-C libraries restricted with {}'.format(enzyme)
@@ -152,12 +160,12 @@ def find_interactions(
             for _ in tqdm.tqdm(
                     pool.istarmap(get_cell_interactions,
                                   zip(
-                                      repeat(spatial),
                                       repeat(enzyme),
                                       replicates,
                                       repeat(query_type),
                                       repeat(enzyme_df),
-                                      repeat(gene_interactions)
+                                      repeat(gene_interactions),
+                                      repeat(pchic)
                                   )
                                   ),
                     total=len(replicates),
@@ -175,21 +183,19 @@ def find_interactions(
         logger.write(msg)
     else:
         interactions_df = pd.concat(interactions_df)
-    
-    if spatial == 'hic':
+    if pchic:
+        cols = ['p_fid', 'p_name', 'oe_fid', 'oe_name', 'n_reads',
+                'score', 'query_type', 'query_fragment',
+                'replicate', 'cell_line', 'enzyme']
+        interactions_df = interactions_df[cols]
+        interactions_df = interactions_df.drop_duplicates()
+        interactions_df = filter_inter_for_pchic(interactions_df, query_type)
+        logger.write('  Time elasped: {:.2f} mins.'.format((time.time() - start_time)/60))
+    else:
         cols = ['cell_line', 'query_type', 'query_chr', 'query_fragment',
                 'fragment_chr', 'fragment', 'replicate', 'enzyme']
         interactions_df = interactions_df[cols]
         interactions_df = interactions_df.drop_duplicates()
-        logger.write('  Time elasped: {:.2f} mins.'.format((time.time() - start_time)/60))
-
-    else:
-        cols = ['p_fid', 'p_name', 'oe_fid', 'oe_name', 'n_reads',
-                'score', 'query_type', 'query_fragment', 
-                'replicate', 'cell_line', 'enzyme']
-        interactions_df = interactions_df[cols]
-        interactions_df = interactions_df.drop_duplicates()
-        interactions_df = filter_inter_for_pchic(interactions_df)
         logger.write('  Time elasped: {:.2f} mins.'.format((time.time() - start_time)/60))
 
     return interactions_df
