@@ -92,7 +92,7 @@ def parse_hic(
         exclude_cell_line,
         restriction_enzymes,
         db,
-        pchic=None):
+        pchic=False):
     ''' user parameters -r, -n and -x.
 
     Args:

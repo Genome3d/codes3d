@@ -435,7 +435,7 @@ def get_gene_info(
         output_dir,
         db,
         logger,
-        pchic = None,
+        pchic = False,
         suppress_intermediate_files=False):
     enzymes = hic_df['enzyme'].drop_duplicates().tolist()
     gene_df = []
