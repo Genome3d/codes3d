@@ -51,10 +51,10 @@ def parse_tissues(user_tissues, match_tissues, eqtl_project, db):
             else:
                 matched_df.append(u_df)
                 matched_tissues.append(u_tissue)
-        error_msg = 'Program aborting:\n\t{}\nnot found in database.'
+        error_msg = 'Program aborting: {} not found in database.'
         if (len(matched_df) == 0 or len(not_tissues) > 0) and len(to_omit) == 0:
             print(error_msg.format('\n\t'.join(not_tissues)))
-            print('\nPlease use one of the following. ' +
+            print('\nPlease use one of the following with -t flag. ' +
                   'Tissue names are case sensitive:')
             list_eqtl_tissues(db)
             sys.exit()
