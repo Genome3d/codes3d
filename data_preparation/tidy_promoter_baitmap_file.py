@@ -7,7 +7,7 @@ import os
 import sys
 
 
-def tidy_promoter_file(baits,out_file):
+def tidy_promoter_file(baits,out_file,p_id):
     
     cols = ['chr', 'start', 'end', 'frag_id', 'genes']
     bait_df = pd.read_csv(baits, sep="\t", names = cols).drop_duplicates()
@@ -17,15 +17,15 @@ def tidy_promoter_file(baits,out_file):
     bait_df_new = bait_df.explode('genes')
     bait_df_new = bait_df_new.dropna()
     bait_df_new = bait_df_new.drop_duplicates()
+    bait_df_new['project'] = p_id
     bait_df_new.sort_values(by = 'genes', inplace=True, ascending=True)
-    print(bait_df_new)
-
+    #print(bait_df_new)
     bait_df_new.to_csv(out_file, sep='\t', header=True, index=False)
 
 def parse_args():
 
     parser = argparse.ArgumentParser(
-            description="Tidy up promoter file for CoDeS3D PRO")
+            description="Tidy up promoter file for CoDeS3D pipeline")
 
     parser.add_argument(
             '-f', '--bait-file', required = True,
@@ -36,6 +36,11 @@ def parse_args():
             '-o', '--out-fp', required = True,
             help = '''Provide absolute path to an output file''')
 
+    parser.add_argument(
+            '-p', '--project-id', type=str, required = True,
+            help = '''Project ID will be appended into the output file
+            which will be used while running the CoDeS3D pipeline.
+            Example: 'InkyungJung2019'. ''')
     return parser.parse_args()
 
 
@@ -44,12 +49,12 @@ if __name__ == '__main__':
     args =  parse_args()
     start_time = time.time()
 
-    if not (args.bait_file or args.out_fp):
+    if not (args.bait_file or args.out_fp or args.project_id):
         message = '''One or more of the required parameters are missing.
         Use tidy_promoter_baitmap_file.py -h for more details.'''
         print(message)
         sys.exit()
 
-    tidy_promoter_file(args.bait_file, args.out_fp)
+    tidy_promoter_file(args.bait_file, args.out_fp, args.project_id)
 
 

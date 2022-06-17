@@ -115,8 +115,8 @@ def find_snps(
                     continue
             snp_df = pd.concat(snp_df)
             logger.verbose = False
-            gene_df, snp_df = filter_snp_fragments_pchic(
-                    snp_df, logger)
+            gene_df, snp_df = filter_snp_fragments(
+                    snp_df, logger, pchic)
             snp_df.sort_values(by=['variant_id'], inplace=True)
             snp_list = snp_df['variant_id'].drop_duplicates().tolist()
             batchsize = 2000
@@ -163,6 +163,7 @@ def find_snps(
             all_snps.append(snp_df)
             all_genes.append(gene_df)
             logger.verbose = True
+
     else:
         for chrom in sorted(chrom_list):
             chrom_dir = os.path.join(output_dir, chrom)
@@ -223,8 +224,8 @@ def find_snps(
                 continue
             snp_df = pd.concat(snp_df)
             logger.verbose = False
-            gene_df, snp_df = filter_snp_fragments_hic(
-                snp_df, logger)
+            gene_df, snp_df = filter_snp_fragments(
+                snp_df, logger, pchic)
             snp_df.sort_values(by=['variant_id'], inplace=True)
             snp_list = snp_df['variant_id'].drop_duplicates().tolist()
             batchsize = 2000
@@ -288,7 +289,7 @@ def find_gene_snps(
         inter_df,
         enzyme,
         snps,
-        pchic):
+        pchic=False):
     db.dispose()
     eqtl_project_db.dispose()
     
@@ -374,8 +375,7 @@ def find_snp_by_id(df, db, pchic=False):
         res = con.execute(sql.format(chunk['id'].min(), chunk['id'].max())).fetchall()
         if not res:
             continue
-        res = pd.DataFrame(res, columns=[
-            'rsid', 'variant_id', 'chrom', 'locus', 'id']).drop_duplicates()
+        res = pd.DataFrame(res, columns=['rsid', 'variant_id', 'chrom', 'locus', 'id'])
         snp_df.append(res[res['id'].isin(chunk['id'])])
     con.close()
     if len(snp_df) == 0:
@@ -397,67 +397,70 @@ def find_snp_by_variant_id(df, db):
     ]['variant_id'].drop_duplicates().tolist()
     return snp_df, omitted_snps
 
-def filter_snp_fragments_hic(
-        snp_df,
-        logger):
-    ''' Filter snp-fragment interactions '''
-    logger.write('  * Filtering gene-SNP interactions...')
-    snp_df['interactions'] = snp_df.groupby(
-        ['variant_id', 'gene', 'cell_line', 'enzyme'])[
-            'gene_fragment'].transform('count')
-    snp_df['replicates'] = snp_df.groupby(
-        ['variant_id', 'gene', 'cell_line', 'enzyme'])[
-            'replicate'].transform('count')
-    snp_df = snp_df.drop(columns=['replicate', 'gene_fragment'])
-    snp_df = snp_df.drop_duplicates()
-    snp_df['sum_interactions'] = snp_df.groupby(
-        ['variant_id', 'gene'])[
-            'interactions'].transform('sum')
-    snp_df['sum_replicates'] = snp_df.groupby(
-        ['variant_id', 'gene'])[
-            'replicates'].transform('sum')
-    snp_df['sum_cell_lines'] = snp_df.groupby(
-        ['variant_id', 'gene'])['cell_line'].transform('count')
-    condition = (
-        (snp_df['interactions'] / snp_df['cell_line_replicates'] <= 1) &
-        (snp_df['sum_replicates'] < 2) &
-        (snp_df['sum_cell_lines'] < 2))
-    gene_df = snp_df[~condition]
-    snp_df = gene_df[
-        ['id', 'snp', 'chrom', 'locus', 'variant_id', 'fragment', 'enzyme']
-    ]
-    snp_df.drop_duplicates(inplace=True)
-    cols = ['snp', 'chrom', 'locus', 'variant_id',
-            'gene', 'gencode_id', 'gene_chr', 'gene_start', 'gene_end',
-            'interactions', 'replicates', 'enzyme',
-            'cell_line', 'cell_line_replicates', 'sum_interactions',
-            'sum_replicates', 'sum_cell_lines']
-    return gene_df[cols], snp_df
 
-def filter_snp_fragments_pchic(
+
+def filter_snp_fragments(
         snp_df,
-        logger):
-    ''' Calculating N_reads and chicago_scores '''
-    logger.write('  * Calculating cumulative scores for gene promoter-SNP interactions...')
-    snp_df = snp_df.drop_duplicates()
-    snp_df = snp_df.drop(columns=['replicate','id']).drop_duplicates()
-    snp_df['N_reads'] = snp_df.groupby(
-            ['variant_id', 'gencode_id', 'inter_frag',
-            'gene_fragment', 'cell_line'])[
-            'n_reads'].transform('sum')
-    snp_df['Score'] = snp_df.groupby(['variant_id', 'gencode_id', 'inter_frag',
+        logger,
+        pchic=False):
+    ''' Filter snp-fragment interactions '''
+    if pchic:
+        ''' Calculating N_reads and chicago_scores '''
+        logger.write('  * Calculating cumulative scores for gene promoter-SNP interactions...')
+        snp_df = snp_df.drop_duplicates()
+        snp_df = snp_df.drop(columns=['replicate','id']).drop_duplicates()
+        snp_df['N_reads'] = snp_df.groupby(
+                ['variant_id', 'gencode_id', 'inter_frag',
+                'gene_fragment', 'cell_line'])[
+                'n_reads'].transform('sum')
+        snp_df['Score'] = snp_df.groupby(['variant_id', 'gencode_id', 'inter_frag',
             'gene_fragment', 'cell_line','N_reads'])[
             'score'].transform('mean').round(2)
-    gene_df = snp_df[['snp', 'chrom', 'locus', 'variant_id',
-        'gene', 'gencode_id', 'gene_chr', 'gene_start', 'gene_end',
-        'enzyme', 'cell_line', 'N_reads', 'Score']].drop_duplicates()
-    snp_df = snp_df[
-            ['snp', 'chrom', 'locus', 'variant_id','frag_id','enzyme']]
-    snp_df.drop_duplicates(inplace=True)
-    cols = ['snp', 'chrom', 'locus', 'variant_id',
+        gene_df = snp_df[['snp', 'chrom', 'locus', 'variant_id',
             'gene', 'gencode_id', 'gene_chr', 'gene_start', 'gene_end',
-            'enzyme', 'cell_line', 'N_reads', 'Score']
+            'enzyme', 'cell_line', 'N_reads', 'Score']].drop_duplicates()
+        snp_df = snp_df[
+                ['snp', 'chrom', 'locus', 'variant_id','frag_id','enzyme']]
+        snp_df.drop_duplicates(inplace=True)
+        cols = ['snp', 'chrom', 'locus', 'variant_id',
+                'gene', 'gencode_id', 'gene_chr', 'gene_start', 'gene_end',
+                'enzyme', 'cell_line', 'N_reads', 'Score']
+    else:
+        logger.write('  * Filtering gene-SNP interactions...')
+        snp_df['interactions'] = snp_df.groupby(
+            ['variant_id', 'gene', 'cell_line', 'enzyme'])[
+                'gene_fragment'].transform('count')
+        snp_df['replicates'] = snp_df.groupby(
+            ['variant_id', 'gene', 'cell_line', 'enzyme'])[
+                'replicate'].transform('count')
+        snp_df = snp_df.drop(columns=['replicate', 'gene_fragment'])
+        snp_df = snp_df.drop_duplicates()
+        snp_df['sum_interactions'] = snp_df.groupby(
+            ['variant_id', 'gene'])[
+                'interactions'].transform('sum')
+        snp_df['sum_replicates'] = snp_df.groupby(
+            ['variant_id', 'gene'])[
+                'replicates'].transform('sum')
+        snp_df['sum_cell_lines'] = snp_df.groupby(
+            ['variant_id', 'gene'])['cell_line'].transform('count')
+        condition = (
+            (snp_df['interactions'] / snp_df['cell_line_replicates'] <= 1) &
+            (snp_df['sum_replicates'] < 2) &
+            (snp_df['sum_cell_lines'] < 2))
+        gene_df = snp_df[~condition]
+        snp_df = gene_df[
+            ['id', 'snp', 'chrom', 'locus', 'variant_id', 'fragment', 'enzyme']
+        ]
+        snp_df.drop_duplicates(inplace=True)
+        cols = ['snp', 'chrom', 'locus', 'variant_id',
+                'gene', 'gencode_id', 'gene_chr', 'gene_start', 'gene_end',
+                'interactions', 'replicates', 'enzyme',
+                'cell_line', 'cell_line_replicates', 'sum_interactions',
+                'sum_replicates', 'sum_cell_lines']
     return gene_df[cols], snp_df
+
+
+
 
 def process_rs_df_whole(rs_df, db):
     rsid_tuple = ()
@@ -658,7 +661,7 @@ def process_snp_input(inputs, output_dir, db,
                 for line in f:
                     if not line.strip() == '':
                         df.append([line.strip().lower()])
-            df = pd.DataFrame(df, columns=['snp']).drop_duplicates() #Handle duplicated SNPs in the input file
+            df = pd.DataFrame(df, columns=['snp']).drop_duplicates()
             len_input_snps += len(df)
             temp_snp_df, temp_omitted_snps = get_file_snp_position(df, db)
             snp_df += temp_snp_df
@@ -744,7 +747,7 @@ def get_snp(inputs,
 
     Returns:
     A pandas dataframe
-    with the df columns:
+    with the ff columns:
     1. snp #rsID
     2. SNP chromosome
     4. Fragment ID
@@ -760,7 +763,7 @@ def get_snp(inputs,
     snp_df, len_input_snps, omitted_snps, merged_snps = process_snp_input(
         inputs, output_dir, db, rs_merge_arch_fp,  logger)
     if snp_df.empty:
-        logger.write('We could not find your SNPs in our databases.')
+        logger.write('We  could not find your SNPs in our databases.')
         sys.exit()
     snp_df[['id', 'locus']] = snp_df[['id', 'locus']].astype(int)
     snp_df = get_snp_fragments(snp_df, restriction_enzymes, db, pchic)

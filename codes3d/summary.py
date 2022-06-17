@@ -15,9 +15,9 @@ import codes3d
 
 
 def produce_summary(
-        pchic, eqtl_df, snp_df, gene_df,
+        eqtl_df, snp_df, gene_df,
         expression_table_fp, fdr_threshold, output_dir, num_processes,
-        output_format, no_afc, logger):
+        output_format, no_afc, logger, pchic=False):
     """Write final results of eQTL-eGene associations
 
     Args:
@@ -43,40 +43,7 @@ def produce_summary(
     eqtl_df['sid_chr'] = eqtl_df['sid_chr'].str[3:]
     gene_df['pid'] = gene_df['gencode_id'].str.split('.', expand=True)[0]
     cols = []
-    if not pchic:
-        logger.write("  * Computing Hi-C data...")
-        df = gene_df[['snp', 'gencode_id', 'cell_line', 'interactions',
-                  'replicates', 'cell_line_replicates']].merge(
-            eqtl_df[['snp', 'gencode_id']],  on=['snp', 'gencode_id'], how='inner')
-        df['hic_score'] = df['interactions'] / df['cell_line_replicates']
-        df = df.drop_duplicates()
-        grouped_df = df.groupby(['snp', 'gencode_id'])
-        df['cell_line_hic_scores'] = df.apply(lambda row: ', '.join(
-            grouped_df.get_group((row['snp'], row['gencode_id']))[
-                'hic_score'].round(2).astype(str).values.tolist()), axis=1)
-        df['hic_score'] = df.apply(lambda row: grouped_df.get_group(
-            (row['snp'], row['gencode_id']))[
-            'hic_score'].sum().round(2), axis=1)
-        df['cell_lines'] = df.apply(lambda row: ', '.join(
-            grouped_df.get_group((row['snp'], row['gencode_id']))[
-                'cell_line'].values.tolist()), axis=1)
-        eqtl_df = eqtl_df.merge(df[
-            ['snp', 'gencode_id', 'cell_lines', 'hic_score', 'cell_line_hic_scores']
-            ].drop_duplicates(), on=['snp', 'gencode_id'], how='left')
-
-        # Get SNP-gene distance
-        eqtl_df['sid_chr'] = 'chr'+eqtl_df['sid_chr'].astype(str)
-        eqtl_df['distance'] = eqtl_df.apply(
-            lambda row: get_snp_gene_distance(row), axis=1)
-        eqtl_df['interaction_type'] = eqtl_df.apply(
-            lambda row: label_cis(row), axis=1)
-        eqtl_df = eqtl_df.rename(
-            columns={'sid_chr': 'snp_chr',
-                    'sid_pos': 'snp_locus',
-                    'pval': 'eqtl_pval',
-                    'b': 'beta',
-                    'b_se': 'beta_se'})
-    else:
+    if pchic:
         df = gene_df[['snp', 'gencode_id', 'cell_line','N_reads','Score']].merge(
                 eqtl_df[['snp', 'gencode_id']],  on=['snp', 'gencode_id'], how='inner')
         df = df.drop_duplicates()
@@ -93,18 +60,40 @@ def produce_summary(
         eqtl_df = eqtl_df.merge(df[
             ['snp', 'gencode_id', 'cell_lines', 'N_reads_per_cell_line', 'chicago_scores']
             ].drop_duplicates(), on=['snp', 'gencode_id'], how='left')
-        # Get SNP-gene distance
-        eqtl_df['sid_chr'] = 'chr'+eqtl_df['sid_chr'].astype(str)
-        eqtl_df['distance'] = eqtl_df.apply(
-                lambda row: get_snp_gene_distance(row), axis=1)
-        eqtl_df['interaction_type'] = eqtl_df.apply(
-                lambda row: label_cis(row), axis=1)
-        eqtl_df = eqtl_df.rename(
-                columns={'sid_chr': 'snp_chr',
-                         'sid_pos': 'snp_locus',
-                         'pval': 'eqtl_pval',
-                         'b': 'beta',
-                         'b_se': 'beta_se'})
+     
+         
+    else:
+        logger.write("  * Computing Hi-C data...")
+        df = gene_df[['snp', 'gencode_id', 'cell_line', 'interactions',
+            'replicates', 'cell_line_replicates']].merge(
+            eqtl_df[['snp', 'gencode_id']],  on=['snp', 'gencode_id'], how='inner')
+        df['hic_score'] = df['interactions'] / df['cell_line_replicates']
+        df = df.drop_duplicates()
+        grouped_df = df.groupby(['snp', 'gencode_id'])
+        df['cell_line_hic_scores'] = df.apply(lambda row: ', '.join(
+            grouped_df.get_group((row['snp'], row['gencode_id']))[
+                'hic_score'].round(2).astype(str).values.tolist()), axis=1)
+        df['hic_score'] = df.apply(lambda row: grouped_df.get_group(
+            (row['snp'], row['gencode_id']))[
+            'hic_score'].sum().round(2), axis=1)
+        df['cell_lines'] = df.apply(lambda row: ', '.join(
+            grouped_df.get_group((row['snp'], row['gencode_id']))[
+                'cell_line'].values.tolist()), axis=1)
+        eqtl_df = eqtl_df.merge(df[
+            ['snp', 'gencode_id', 'cell_lines', 'hic_score', 'cell_line_hic_scores']
+            ].drop_duplicates(), on=['snp', 'gencode_id'], how='left')
+    # Get SNP-gene distance
+    eqtl_df['sid_chr'] = 'chr'+eqtl_df['sid_chr'].astype(str)
+    eqtl_df['distance'] = eqtl_df.apply(
+            lambda row: get_snp_gene_distance(row), axis=1)
+    eqtl_df['interaction_type'] = eqtl_df.apply(
+            lambda row: label_cis(row), axis=1)
+    eqtl_df = eqtl_df.rename(
+            columns={'sid_chr': 'snp_chr',
+                    'sid_pos': 'snp_locus',
+                    'pval': 'eqtl_pval',
+                    'b': 'beta',
+                    'b_se': 'beta_se'})
 
     if not no_afc and not pchic:
         cols = ['snp', 'gencode_id', 'gene', 'tissue', 'adj_pval',
@@ -117,10 +106,10 @@ def produce_summary(
     elif not no_afc and pchic:
         cols = ['snp', 'gencode_id', 'gene', 'tissue', 'adj_pval',
                 'log2_aFC', 'log2_aFC_lower', 'log2_aFC_upper', 'maf',
-                'interaction_type']
+                'interaction_type', 'chicago_scores']
     elif no_afc and pchic:
         cols = ['snp', 'gencode_id', 'gene', 'tissue', 'adj_pval',
-                'beta', 'beta_se', 'maf', 'interaction_type']
+                'beta', 'beta_se', 'maf', 'interaction_type', 'chicago_scores']
 
         
     if output_format == 'short':
@@ -169,18 +158,18 @@ def produce_summary(
     }
     extremes_df = pd.DataFrame(extremes_df)
 
-    if not pchic:
-        eqtl_df = eqtl_df.merge(
-            extremes_df.reset_index(), left_on=['gencode_id'], right_on=['Name'])
-        cols += ['cell_lines', 'cell_line_hic_scores', 'expression',
-                'max_expressed_tissue', 'max_expression',
-                'min_expressed_tissue', 'min_expression']
-    elif pchic:
+    if pchic:
         eqtl_df = eqtl_df.merge(
             extremes_df.reset_index(), left_on=['gencode_id'], right_on=['Name'])
         cols += ['cell_lines', 'N_reads_per_cell_line', 'chicago_scores', 'expression',
                 'max_expressed_tissue', 'max_expression',
                 'min_expressed_tissue', 'min_expression']
+    else:
+        eqtl_df = eqtl_df.merge(
+                extremes_df.reset_index(), left_on=['gencode_id'], right_on=['Name'])
+        cols += ['cell_lines', 'cell_line_hic_scores', 'expression',
+                'max_expressed_tissue', 'max_expression',
+                'min_expressed_tissue', 'min_expression'] 
     eqtl_df = eqtl_df[cols]
     eqtl_df.to_csv(os.path.join(output_dir, 'significant_eqtls.txt'), sep='\t',
                    columns=cols, index=False)

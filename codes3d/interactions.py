@@ -145,11 +145,12 @@ def find_interactions(
         for cell_line in cell_lines:  # TODO: Replace with database
             replicates += [os.path.join(_3dgi_data_dir, cell_line, replicate)
                            for replicate in os.listdir(
-                                            os.path.join(_3dgi_data_dir, cell_line))
-                                            if replicate.endswith('.db')]
+                os.path.join(_3dgi_data_dir, cell_line))
+                if replicate.endswith('.db')]
         enzyme_df = fragment_df[fragment_df['enzyme'] == enzyme]
         enzyme_df = enzyme_df[['fragment',
                                'chrom', 'enzyme']].drop_duplicates()
+
         with multiprocessing.Pool(num_processes) as pool:
             if pchic:
                 desc = '  * PCHi-C libraries restricted with {}'.format(enzyme)

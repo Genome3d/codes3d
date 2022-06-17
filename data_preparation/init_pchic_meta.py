@@ -24,7 +24,7 @@ if __name__ == '__main__':
     replicates = pd.DataFrame(enzyme_dict, columns=['replicate', 'enzyme', 'library'])
     libraries = replicates.groupby(
             ['library','enzyme']).size().reset_index(name='rep_count')
-    from_file = pd.read_csv('/mnt/projects/users/sgok603/codes3d_sreemol/lib/meta_info/meta_pchic.txt', sep="\t")
+    from_file = pd.read_csv('/mnt/projects/users/sgok603/codes3d/meta_info/meta_pchic.txt', sep="\t")
     libraries = libraries.merge(from_file, how='left', on=['library','enzyme']).drop_duplicates()
     db = create_engine(
             'postgresql://codes3d:codes3d@127.0.0.1/codes3d_commons', echo=False)
