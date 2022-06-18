@@ -20,7 +20,7 @@ def tidy_promoter_file(baits,out_file,p_id):
     bait_df_new['project'] = p_id
     bait_df_new.sort_values(by = 'genes', inplace=True, ascending=True)
     #print(bait_df_new)
-    bait_df_new.to_csv(out_file, sep='\t', header=True, index=False)
+    bait_df_new.to_csv(out_file, sep='\t', header=False, index=False)
 
 def parse_args():
 
