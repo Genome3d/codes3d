@@ -12,7 +12,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 import tqdm
 import statsmodels.stats.multitest as multitest
-
 import snps
 import genes
 import interactions
@@ -52,10 +51,10 @@ def parse_tissues(user_tissues, match_tissues, eqtl_project, db):
             else:
                 matched_df.append(u_df)
                 matched_tissues.append(u_tissue)
-        error_msg = 'Program aborting:\n\t{}\nnot found in database.'
+        error_msg = 'Program aborting: {} not found in database.'
         if (len(matched_df) == 0 or len(not_tissues) > 0) and len(to_omit) == 0:
             print(error_msg.format('\n\t'.join(not_tissues)))
-            print('\nPlease use one of the following. ' +
+            print('\nPlease use one of the following with -t flag. ' +
                   'Tissue names are case sensitive:')
             list_eqtl_tissues(db)
             sys.exit()
@@ -93,7 +92,8 @@ def parse_hic(
         include_cell_line,
         exclude_cell_line,
         restriction_enzymes,
-        db):
+        db,
+        pchic=False):
     ''' user parameters -r, -n and -x.
 
     Args:
@@ -103,9 +103,13 @@ def parse_hic(
         exclude_cell_line: space-delimited list of cell_lines from -x
     Returns:
         hic_df: a dataframe columns(library, enzyme, rep_count)
+        pchic_df: a dataframe columns(library, enzyme, rep_count)
     '''
-
-    sql = '''SELECT library, tags, enzyme, rep_count FROM meta_hic'''
+    if not args.pchic:
+        sql = '''SELECT library, tags, enzyme, rep_count FROM meta_hic'''
+    else:
+        sql = '''SELECT library, tags, enzyme, rep_count FROM meta_pchic'''
+    
     df = pd.DataFrame()
     with db.connect() as con:
         df = pd.read_sql(sql, con=con)
@@ -122,6 +126,9 @@ def parse_hic(
                 (df['tags'].str.contains(
                     r'\b{}\b'.format(u_tissue), case=False))
             ]
+            #u_df = df[
+            #        df['library'].str.contains(u_tissue,case=False) | 
+            #        df['tags'].str.contains(u_tissue,case=False)]
             if u_df.empty:
                 if u_tissue.startswith(u_tissue):
                     to_omit.append(u_tissue)
@@ -134,7 +141,7 @@ def parse_hic(
         if (len(matched_df) == 0 or len(not_tissues) > 0) and len(to_omit) == 0:
             print(error_msg.format('\n\t'.join(not_tissues)))
             print(('Use -t and -n to include specific eQTL tissues'
-                   ' and Hi-C libraries. Library names are case sensitive:'))
+                ' and Hi-C/PCHi-C libraries. Library names are case sensitive:'))
             sys.exit('\n\t{}'.format('\n\t'.join(df['library'].tolist())))
         if len(matched_df) == 0 and len(to_omit) > 0:
             hic_df = df
@@ -150,7 +157,6 @@ def parse_hic(
                     ~hic_df['tags'].str.contains(
                         r'\b{}\b'.format(to_omit[i][1:]), case=False)]
             hic_df = hic_df.drop_duplicates()
-
     elif include_cell_line and len(include_cell_line) > 0:
         validate_input(include_cell_line, df['library'])
         hic_df = df[df['library'].str.upper().isin(
@@ -169,7 +175,6 @@ def parse_hic(
         return hic_df.drop_duplicates()
     else:
         return df.drop_duplicates()
-
 
 def validate_input(input_params, params):
     input_params_upper = [c.upper() for c in input_params]
@@ -303,8 +308,8 @@ def map_non_spatial_eqtls(
         commons_db,
         covariates_dir,
         expression_dir,
-        logger):
-    
+        logger,
+        pchic = False):
     gene_info_df = None
     gene_list = None
     if not snp_df.empty:
@@ -312,12 +317,13 @@ def map_non_spatial_eqtls(
             print('No gene list given. Will map across all genes.')
         else:
             gene_info_df = genes.get_gene_info(
-                args.gene_list,
-                hic_df,
-                args.output_dir,
-                commons_db,
-                logger,
-                args.suppress_intermediate_files)
+                    args.gene_list,
+                    hic_df,
+                    args.output_dir,
+                    commons_db,
+                    logger,
+                    pchic,
+                    args.suppress_intermediate_files)
             gene_info_df = gene_info_df.rename(columns={
                 'name': 'gene',
                 'chrom': 'gene_chrom',
@@ -409,7 +415,7 @@ def map_non_spatial_eqtls(
         '''
     fp = os.path.join(args.output_dir, 'non_spatial_eqtls.txt') 
     eqtl_df[cols].to_csv(fp, sep='\t', index=False)
-    logger.write(f'Output written to {fp}')
+    logger.write(f'Output written to {fp}.')
     msg = 'Done.\nTotal time elasped: {:.2f} mins.'.format(
         (time.time() - start_time)/60)
     logger.write(msg)    
@@ -426,7 +432,8 @@ def map_spatial_eqtls(
         genotypes_fp,
         eqtl_project_db,
         covariates_dir,
-        expression_dir):
+        expression_dir,
+        pchic=False):
     gene_df = []
     eqtl_df = []
     batchsize = 2000
@@ -447,14 +454,15 @@ def map_spatial_eqtls(
             'snp',
             C.lib_dir,
             hic_df,
-            # batch_output_dir,
             args.num_processes,
-            logger)
+            logger,
+            pchic)
         batch_gene_df = genes.get_gene_by_id(
-            batch_snp_df,
-            batch_interactions_df,
-            commons_db,
-            logger)
+                batch_snp_df,
+                batch_interactions_df,
+                commons_db,
+                logger,
+                pchic)
         gene_df.append(batch_gene_df)
         if batch_gene_df.empty:
             continue
@@ -542,8 +550,6 @@ class CODES3D:
         self.hic_restriction_enzymes = [
             e.strip() for e in os.listdir(self.hic_dir)]
 
-
-
 def parse_args():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -568,6 +574,9 @@ def parse_args():
     parser.add_argument(
         '-o', '--output-dir',
         help='The directory in which to output results.')
+    parser.add_argument(
+        '--pchic', action='store_true', default=False,
+        help='''Use this flag to use pchic datasets instead of hic.''') 
     parser.add_argument(
         '--multi-test', default = 'multi',
         help='''Options for BH multiple-testing: ['snp', 'tissue', 'multi'].
@@ -626,7 +635,7 @@ def parse_args():
         Default is all tissues from the GTEx project.
         Use 'codes3d.py --list-eqtl-tissues' for a list of installed tissues.''')
     parser.add_argument(
-        '--eqtl-project', type=str, default=None,
+        '--eqtl-project', type=str, default='GTEx',
         help='''The eQTL project to query. Default: GTEx.
         'use \'codes3d.py --list-eqtl-db\' to list available databases.''')
     parser.add_argument(
@@ -729,14 +738,33 @@ def log_settings(args, logger):
     logger.write(f'FDR threshold:\t{args.fdr_threshold}')
     logger.write(f'MAF threshold:\t{args.maf_threshold}')
     logger.write(f'Effect size:\t{effect_size}')
-    if not args.match_tissues and not args.include_cell_lines and \
-       not args.exclude_cell_lines:
+
+    if not args.pchic and not args.non_spatial:
+        logger.write('Using Hi-C datasets\n')
+    else:
+        if args.pchic and not args.non_spatial:
+            logger.write('Using PCHi-C datasets\n')
+
+    if not args.pchic and not args.match_tissues and not args.include_cell_lines and \
+        not args.exclude_cell_lines:
         if not args.non_spatial:
             logger.write('Hi-C libraries:\tAll libraries in database')
     else:
-        if not args.non_spatial:
+        if not args.pchic and not  args.non_spatial:
             logger.write('Hi-C libraries:\t{}'.format(
                 ', '.join(hic_df['library'].tolist())))
+
+
+    if args.pchic and not args.match_tissues and not args.include_cell_lines and \
+       not args.exclude_cell_lines:
+        if not args.non_spatial:
+            logger.write('PCHi-C libraries:\tAll libraries in database')
+    else:
+        if args.pchic and not args.non_spatial:
+            logger.write('PCHi-C libraries:\t{}'.format(
+                ', '.join(hic_df['library'].tolist())))
+
+
     if not args.tissues and not args.match_tissues:
         logger.write('eQTL tissues:\tAll tissues in database\n')
     else:
@@ -770,24 +798,42 @@ if __name__ == '__main__':
         args.include_cell_lines,
         args.exclude_cell_lines,
         args.restriction_enzymes,
-        commons_db)
-    if args.match_tissues and not args.non_spatial:
-        logger.write('Hi-C libraries:\t{}'.format(
+        commons_db,
+        args.pchic)
+    
+    if not args.pchic and args.match_tissues and not args.non_spatial:
+        logger.write('Using Hi-C libraries:\t{}'.format(
             ', '.join(hic_df['library'].tolist())))
         logger.write('\neQTL tissues:\t{}\n'.format(
             ', '.join(tissues['name'].tolist())))
-        
-        upsert = input(
+
+        upsert = input( 
             '''WARNING: We've tried to match your Hi-C and eQTL tissues above.
-            Continue? [y/N]'''
-        )
+            Continue? [y/n]''')
         if not upsert.lower() == 'y':
             print(('Use -t and -n to include specific eQTL tissues'
                    ' and Hi-C libraries'))
             sys.exit('Exiting.')
 
+
+    if args.pchic and args.match_tissues and not args.non_spatial:
+        logger.write('Using PCHi-C libraries:\t{}'.format(
+            ', '.join(hic_df['library'].tolist())))
+        logger.write('\neQTL tissues:\t{}\n'.format(
+            ', '.join(tissues['name'].tolist())))
+        
+        upsert = input(
+            '''WARNING: We've tried to match your PCHi-C and eQTL tissues above.
+            Continue? [y/n]''')
+        if not upsert.lower() == 'y':
+            print(('Use -t and -n to include specific eQTL tissues'
+                   ' and PCHi-C libraries'))
+            sys.exit('Exiting.')
+    
     log_settings(args, logger)
+    
     eqtl_project = tissues['project'].tolist()[0]
+    
     config = configparser.ConfigParser()
     config.read(args.config)
     covariates_dir = os.path.join(
@@ -803,6 +849,7 @@ if __name__ == '__main__':
     snp_df = pd.DataFrame()
     gene_df = []
     eqtl_df = []
+    
     if args.gene_input:
         gene_info_df = genes.get_gene_info(
             args.gene_input,
@@ -810,6 +857,7 @@ if __name__ == '__main__':
             args.output_dir,
             commons_db,
             logger,
+            args.pchic,
             args.suppress_intermediate_files)
         if args.non_spatial:
             map_non_spatial_eqtls(
@@ -824,33 +872,36 @@ if __name__ == '__main__':
                 commons_db,
                 covariates_dir,
                 expression_dir,
-                logger)
+                logger,
+                args.pchic)
         interactions_df = interactions.find_interactions(
             gene_info_df,
             'gencode_id',
             C.lib_dir,
             hic_df,
-            #args.output_dir,
             args.num_processes,
             logger,
+            args.pchic,
             args.suppress_intermediate_files)
         snp_df, gene_df, eqtl_df = snps.find_snps(
-            interactions_df,
-            gene_info_df,
-            tissues,
-            args.output_dir,
-            C,
-            genotypes_fp,
-            eqtl_project_db,
-            covariates_dir,
-            expression_dir,
-            args.pval_threshold,
-            args.maf_threshold,
-            args.fdr_threshold,
-            args.num_processes,
-            commons_db,
-            logger,
-            args.suppress_intermediate_files)
+                interactions_df,
+                gene_info_df,
+                tissues,
+                args.output_dir,
+                C,
+                genotypes_fp,
+                eqtl_project_db,
+                covariates_dir,
+                expression_dir,
+                args.pval_threshold,
+                args.maf_threshold,
+                args.fdr_threshold,
+                args.num_processes,
+                commons_db,
+                logger,
+                args.pchic,
+                args.suppress_intermediate_files)
+
         if gene_df.empty or snp_df.empty or eqtl_df.empty:
             logger.write('No eQTLs found.\nProgram exiting.')
             sys.exit()
@@ -859,27 +910,32 @@ if __name__ == '__main__':
                 args.output_dir, 'snps.txt'), sep='\t', index=False)
             gene_df.to_csv(os.path.join(
                 args.output_dir, 'genes.txt'), sep='\t', index=False)
+            eqtl_df.to_csv(os.path.join(
+                args.output_dir, 'eqtls.txt'), sep='\t', index=False)
+    
     if args.snp_input or args.snps_within_gene:
         interactions_df = []
         gene_df = []
         gene_info_df = None
         if args.snps_within_gene:
             gene_info_df = genes.get_gene_info(
-            args.snps_within_gene,
-            hic_df,
-            args.output_dir,
-            commons_db,
-            logger,
-            args.suppress_intermediate_files)
+                    args.snps_within_gene,
+                    hic_df,
+                    args.output_dir,
+                    commons_db,
+                    logger,
+                    args.pchic,
+                    args.suppress_intermediate_files)
         snp_df = snps.get_snp(
-            args.snp_input,
-            gene_info_df,
-            hic_df,
-            args.output_dir,
-            eqtl_project_db,
-            C.rs_merge_arch_fp,
-            logger,
-            args.suppress_intermediate_files)
+                args.snp_input,
+                gene_info_df,
+                hic_df,
+                args.output_dir,
+                eqtl_project_db,
+                C.rs_merge_arch_fp,
+                logger,
+                args.pchic,
+                args.suppress_intermediate_files)
         if not args.suppress_intermediate_files:
             snp_df.to_csv(os.path.join(
                 args.output_dir, 'snps.txt'), sep='\t', index=False)
@@ -887,41 +943,49 @@ if __name__ == '__main__':
                 
         if args.non_spatial:
             map_non_spatial_eqtls(
-                snp_df,
-                pd.DataFrame(),
-                tissues,
-                hic_df,
-                C,
-                args,
-                genotypes_fp,
-                eqtl_project_db,
-                commons_db,
-                covariates_dir,
-                expression_dir,
-                logger)
+                    snp_df,
+                    pd.DataFrame(),
+                    tissues,
+                    hic_df,
+                    C,
+                    args,
+                    genotypes_fp,
+                    eqtl_project_db,
+                    commons_db,
+                    covariates_dir,
+                    expression_dir,
+                    logger,
+                    args.pchic)
         else:
             gene_df, eqtl_df = map_spatial_eqtls(
-                snp_list,
-                C,
-                hic_df,
-                args,
-                logger,
-                commons_db,
-                tissues,
-                genotypes_fp,
-                eqtl_project_db,
-                covariates_dir,
-                expression_dir)
+                    snp_list,
+                    C,
+                    hic_df,
+                    args,
+                    logger,
+                    commons_db,
+                    tissues,
+                    genotypes_fp,
+                    eqtl_project_db,
+                    covariates_dir,
+                    expression_dir,
+                    args.pchic
+                    )
+    
     eqtl_df = multi_test_correction(eqtl_df, args.multi_test.lower())
-    logger.write('  * {} eQTL associations passed FDR <= {}.'.format(
-        len(eqtl_df[eqtl_df['adj_pval'] <= args.fdr_threshold]),
-        args.fdr_threshold))
+    #logger.write('  * {} eQTL associations passed FDR <= {}.'.format(
+    #    len(eqtl_df[eqtl_df['adj_pval'] <= args.fdr_threshold]),
+    #    args.fdr_threshold))
     logger.write('  * eQTLs mapped at MAF >= {} and pval threshold <={}.'.format(
         args.maf_threshold, args.pval_threshold))
     if not args.suppress_intermediate_files:
         eqtl_df.to_csv(os.path.join(
             args.output_dir, 'eqtls.txt'), sep='\t', index=False)
     eqtl_df = eqtl_df[eqtl_df['adj_pval'] <= args.fdr_threshold]
+    
+    if eqtl_df.empty:
+        logger.write('  * No significant eQTL associations found. Program exiting.')
+        sys.exit()
 
     if not args.do_not_produce_summary:
         if not args.no_afc:
@@ -939,7 +1003,7 @@ if __name__ == '__main__':
         summary.produce_summary(
             eqtl_df, snp_df, gene_df, expression_table_fp,
             args.fdr_threshold, args.output_dir,
-            args.num_processes, args.output_format, args.no_afc, logger)
+            args.num_processes, args.output_format, args.no_afc, logger, args.pchic)
     msg = 'Done.\nTotal time elasped: {:.2f} mins.'.format(
         (time.time() - start_time)/60)
     logger.write(msg)
