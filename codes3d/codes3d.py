@@ -230,6 +230,14 @@ def list_hic_libraries(db):
             print('{}\t{}'.format(idx + 1, row['library']))
     db.dispose()
 
+def list_pchic_libraries(db):
+    sql = '''SELECT library, tissue FROM meta_pchic'''
+    with db.connect() as con:
+        df = pd.read_sql(sql, con=db)
+        for idx, row in df.drop_duplicates().iterrows():
+            print('{}\t{}'.format(idx + 1, row['library']))
+    db.dispose()
+
 def list_enzymes(db):
     sql = '''SELECT DISTINCT enzyme FROM meta_hic'''
     with db.connect() as con:
@@ -619,6 +627,9 @@ def parse_args():
         '--list-hic-libraries', action='store_true', default=False,
         help='List available Hi-C libraries.')
     parser.add_argument(
+        '--list-pchic-libraries', action='store_true', default=False,
+        help='List available PCHi-C libraries.')
+    parser.add_argument(
         '--match-tissues', action='append', nargs=argparse.REMAINDER, default=None,
         help='''Try to match eQTL and Hi-C tissue types using space-separated 
         tags. When using this, make sure that it is the last tag. 
@@ -700,6 +711,9 @@ def validate_args(args, commons_db):
         sys.exit()
     if args.list_hic_libraries:
         list_hic_libraries(commons_db)
+        sys.exit()
+    if args.list_pchic_libraries:
+        list_pchic_libraries(commons_db)
         sys.exit()
     if args.list_enzymes:
         list_enzymes(commons_db)
