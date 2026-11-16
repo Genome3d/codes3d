@@ -58,9 +58,9 @@ COVARIATES_DIR: %(eqtl_dir)sZhang2018_covariates
 EXPRESSION_DIR: %(eqtl_dir)sZhang2018_expression_matrices
 
 [postgresql]
-host=localhost
+host=/path/to/postgresql/socket
 database=codes3d_commons
 user=codes3d
-password=codes3d
+password=
 port=5432
 pgbouncer_port=6432

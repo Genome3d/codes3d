@@ -4,3 +4,6 @@ lib/
 lib
 codes3d_summary/
 codes3d_output/
+
+# Server-specific database configuration
+/docs/codes3d.conf
