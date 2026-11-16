@@ -550,10 +550,18 @@ class CODES3D:
         self.password = config.get("postgresql", "password")
         self.port = config.get("postgresql", "pgbouncer_port")
         self.port = 5432
-        self.commons_db_url = 'postgresql://{}:{}@{}:{}/{}'.format(
-            self.user, self.password, self.host, self.port, self.commons_db)
-        self.eqtl_db_url = 'postgresql://{}:{}@{}:{}/{}'.format(
-            self.user, self.password, self.host, self.port, 'eqtls_{}')
+        if self.host.startswith('/'):
+            # Connect through Unix socket without a password
+            self.commons_db_url = 'postgresql://{}@/{}?host={}'.format(
+                self.user, self.commons_db, self.host)
+            self.eqtl_db_url = 'postgresql://{}@/eqtls_{{}}?host={}'.format(
+                self.user, self.host)
+        else:
+            # Keep the original TCP/password connection
+            self.commons_db_url = 'postgresql://{}:{}@{}:{}/{}'.format(
+                self.user, self.password, self.host, self.port, self.commons_db)
+            self.eqtl_db_url = 'postgresql://{}:{}@{}:{}/{}'.format(
+                self.user, self.password, self.host, self.port, 'eqtls_{}')
 
         self.hic_restriction_enzymes = [
             e.strip() for e in os.listdir(self.hic_dir)]
